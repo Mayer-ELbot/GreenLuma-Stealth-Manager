@@ -88,10 +88,10 @@ namespace GreenLumaManager
 
         public AppSettings()
         {
-            mode = "standard";
+            mode = "families";
             steamArgs = "-inhibitbootstrap";
             lang = "en";
-            clearAppCache = false;
+            clearAppCache = true;
             firstTimeGuideShown = false;
         }
     }
@@ -2517,6 +2517,75 @@ namespace GreenLumaManager
         // =========================================================================
         // --- LAUNCH & INJECTION ENGINE ---
         // =========================================================================
+        private void RunDeleteSteamAppCacheTool()
+        {
+            string delExe = Path.Combine(appDir, "StealthMode", "DeleteSteamAppCache.exe");
+            if (!File.Exists(delExe))
+                delExe = Path.Combine(appDir, "DeleteSteamAppCache.exe");
+
+            if (!File.Exists(delExe))
+            {
+                try
+                {
+                    string srcDesc;
+                    byte[] bytes = GetPayloadBytes("DeleteSteamAppCache.exe", out srcDesc);
+                    if (bytes != null && bytes.Length > 0)
+                    {
+                        delExe = Path.Combine(appDir, "DeleteSteamAppCache.exe");
+                        File.WriteAllBytes(delExe, bytes);
+                    }
+                }
+                catch { }
+            }
+
+            if (File.Exists(delExe))
+            {
+                try
+                {
+                    var psi = new ProcessStartInfo(delExe) {
+                        WorkingDirectory = Path.GetDirectoryName(delExe),
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    };
+                    var proc = Process.Start(psi);
+                    if (proc != null)
+                    {
+                        proc.WaitForExit(10000);
+                    }
+                }
+                catch { }
+            }
+
+            if (!string.IsNullOrEmpty(steamDir))
+            {
+                string cacheDir = Path.Combine(steamDir, "appcache");
+                string pkgInfo = Path.Combine(cacheDir, "packageinfo.vdf");
+                string appInfo = Path.Combine(cacheDir, "appinfo.vdf");
+                try { if (File.Exists(pkgInfo)) File.Delete(pkgInfo); } catch { }
+                try { if (File.Exists(appInfo)) File.Delete(appInfo); } catch { }
+            }
+        }
+
+        private bool CheckIfSteamFamiliesEnrolled()
+        {
+            if (string.IsNullOrEmpty(steamDir)) return false;
+            try
+            {
+                string userDir = Path.Combine(steamDir, "userdata");
+                if (Directory.Exists(userDir))
+                {
+                    foreach (var cfg in Directory.GetFiles(userDir, "localconfig.vdf", SearchOption.AllDirectories))
+                    {
+                        string content = File.ReadAllText(cfg);
+                        if (content.IndexOf("FamilyGroup", StringComparison.OrdinalIgnoreCase) >= 0)
+                            return true;
+                    }
+                }
+            }
+            catch { }
+            return false;
+        }
+
         private void LaunchSteamSession()
         {
             bool isAr = (settings.lang == "ar");
@@ -2545,31 +2614,12 @@ namespace GreenLumaManager
                 StopSteamProcess();
             }
 
-            if (settings.clearAppCache)
-            {
-                StopSteamProcess();
-                Thread.Sleep(600);
+            // Step 1 & 2: Gracefully stop Steam and run DeleteSteamAppCache tool
+            StopSteamProcess();
+            Thread.Sleep(500);
+            RunDeleteSteamAppCacheTool();
 
-                string cacheDir = Path.Combine(steamDir, "appcache");
-                string pkgInfo = Path.Combine(cacheDir, "packageinfo.vdf");
-                string appInfo = Path.Combine(cacheDir, "appinfo.vdf");
-
-                for (int i = 0; i < 5; i++)
-                {
-                    try
-                    {
-                        if (File.Exists(pkgInfo)) File.Delete(pkgInfo);
-                        if (File.Exists(appInfo)) File.Delete(appInfo);
-                        if (Directory.Exists(cacheDir)) Directory.Delete(cacheDir, true);
-                        break;
-                    }
-                    catch
-                    {
-                        Thread.Sleep(300);
-                    }
-                }
-            }
-
+            // Step 3: Synchronize AppList folder and files
             SyncAppListIni();
             string localAppList = Path.Combine(appDir, "AppList");
             string steamAppList = Path.Combine(steamDir, "AppList");
@@ -2595,10 +2645,18 @@ namespace GreenLumaManager
                 return;
             }
 
-            bool isFamilies = (settings.mode == "families");
+            // Step 4: Inject user32.dll (or user32SF.dll for Steam Families)
+            bool isFamilies = (settings.mode == "families") || CheckIfSteamFamiliesEnrolled();
             string targetDllName = isFamilies ? "user32SF.dll" : "user32.dll";
             string srcDesc;
             byte[] dllBytes = GetPayloadBytes(targetDllName, out srcDesc);
+
+            if (dllBytes == null || dllBytes.Length == 0)
+            {
+                // Fallback to alternate DLL if primary missing
+                targetDllName = (targetDllName == "user32SF.dll") ? "user32.dll" : "user32SF.dll";
+                dllBytes = GetPayloadBytes(targetDllName, out srcDesc);
+            }
 
             if (dllBytes == null || dllBytes.Length == 0)
             {
@@ -2623,6 +2681,7 @@ namespace GreenLumaManager
                 return;
             }
 
+            // Step 5: Launch Steam with inhibitbootstrap
             string args = string.IsNullOrEmpty(settings.steamArgs) ? "-inhibitbootstrap" : settings.steamArgs;
             try
             {
@@ -2645,22 +2704,27 @@ namespace GreenLumaManager
             UpdateStatusUI();
 
             monitorThread = new Thread(() => {
-                for (int i = 0; i < 25; i++)
+                for (int i = 0; i < 30; i++)
                 {
                     if (IsSteamRunning()) break;
                     Thread.Sleep(500);
                 }
+
+                Thread.Sleep(3000);
 
                 while (true)
                 {
                     if (!isInjected) break;
                     if (!IsSteamRunning())
                     {
-                        Thread.Sleep(1500);
-                        DeleteInjectedFiles();
-                        isInjected = false;
-                        Dispatcher.Invoke((Action)(() => UpdateStatusUI()));
-                        break;
+                        Thread.Sleep(2500);
+                        if (!IsSteamRunning())
+                        {
+                            DeleteInjectedFiles();
+                            isInjected = false;
+                            Dispatcher.Invoke((Action)(() => UpdateStatusUI()));
+                            break;
+                        }
                     }
                     Thread.Sleep(1000);
                 }
