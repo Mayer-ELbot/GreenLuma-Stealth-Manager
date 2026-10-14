@@ -84,6 +84,7 @@ namespace GreenLumaManager
         public bool clearAppCache { get; set; }
         public string steamArgs { get; set; }
         public string lang { get; set; } // "en" or "ar"
+        public bool firstTimeGuideShown { get; set; }
 
         public AppSettings()
         {
@@ -91,12 +92,13 @@ namespace GreenLumaManager
             steamArgs = "-inhibitbootstrap";
             lang = "en";
             clearAppCache = false;
+            firstTimeGuideShown = false;
         }
     }
 
     public class MainWindow : Window
     {
-        public const string CURRENT_VERSION = "v1.3.1";
+        public const string CURRENT_VERSION = "v1.3.2";
         public const string GITHUB_REPO = "Mayer-ELbot/GreenLuma-Stealth-Manager";
 
         private string appDir;
@@ -118,6 +120,7 @@ namespace GreenLumaManager
         private TextBlock txtStatus;
         private Border borderStatusDot;
         private Border borderStatusPulseRing;
+        private Button btnGuide;
         private Button btnSettings;
         private Button btnLangToggle;
         private Button btnCheckUpdate;
@@ -125,7 +128,12 @@ namespace GreenLumaManager
         private Border updateBannerBorder;
         private TextBlock txtUpdateBanner;
         private Button btnUpdateBanner;
+        private Button btnUpdateChangelog;
+        private Button btnCloseUpdateBanner;
         private string pendingUpdateUrl = "";
+        private string pendingExeDownloadUrl = "";
+        private string pendingLatestTag = "";
+        private List<KeyValuePair<string, string>> pendingOtherAssets = new List<KeyValuePair<string, string>>();
 
         // Control Deck (Clean Segmented Mode & Launch Deck)
         private TextBlock lblModeHeader;
@@ -231,7 +239,25 @@ namespace GreenLumaManager
                 }
             };
 
+            // Clean up any previous update leftovers
+            try
+            {
+                string oldBak = Path.Combine(appDir, "GreenLumaManager.old");
+                if (File.Exists(oldBak)) File.Delete(oldBak);
+                string oldDownload = Path.Combine(appDir, "GreenLumaManager.new");
+                if (File.Exists(oldDownload)) File.Delete(oldDownload);
+            }
+            catch { }
+
             CheckForUpdatesAsync(false);
+
+            // First-Time Step-by-Step Guide
+            if (!settings.firstTimeGuideShown)
+            {
+                settings.firstTimeGuideShown = true;
+                SaveSettings();
+                Dispatcher.BeginInvoke((Action)(() => OpenQuickGuideDialog()));
+            }
 
             Closing += MainWindow_Closing;
         }
@@ -511,6 +537,19 @@ namespace GreenLumaManager
             // Col 2: Action Buttons & Custom Window Controls
             var rightHeaderStack = new StackPanel() { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
 
+            btnGuide = new Button() {
+                Content = "📖 Guide",
+                Background = new SolidColorBrush(Color.FromArgb(40, 16, 185, 129)),
+                Foreground = new SolidColorBrush(Color.FromRgb(110, 231, 183)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(70, 16, 185, 129)),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(9, 4, 9, 4),
+                Cursor = Cursors.Hand,
+                Margin = new Thickness(0, 0, 6, 0)
+            };
+            btnGuide.Click += (s, e) => OpenQuickGuideDialog();
+            rightHeaderStack.Children.Add(btnGuide);
+
             btnSettings = new Button() {
                 Content = "⚙️ Settings",
                 Background = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)),
@@ -657,23 +696,56 @@ namespace GreenLumaManager
             DockPanel.SetDock(txtUpdateBanner, Dock.Left);
             updateDock.Children.Add(txtUpdateBanner);
 
+            var updateActionsStack = new StackPanel() {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Right
+            };
+
             btnUpdateBanner = new Button() {
-                Content = "Download Update (GitHub) ↗",
+                Content = "⚡ Update & Restart Now",
                 Background = new SolidColorBrush(Color.FromRgb(16, 185, 129)),
                 Foreground = new SolidColorBrush(Color.FromRgb(5, 15, 10)),
                 FontWeight = FontWeights.Bold,
-                Padding = new Thickness(12, 4, 12, 4),
+                Padding = new Thickness(13, 5, 13, 5),
                 BorderThickness = new Thickness(0),
                 Cursor = Cursors.Hand,
-                HorizontalAlignment = HorizontalAlignment.Right
+                Margin = new Thickness(0, 0, 8, 0)
             };
-            btnUpdateBanner.Click += (s, e) => {
+            btnUpdateBanner.Click += (s, e) => StartInAppUpdate();
+            updateActionsStack.Children.Add(btnUpdateBanner);
+
+            btnUpdateChangelog = new Button() {
+                Content = "Release Notes ↗",
+                Background = Brushes.Transparent,
+                Foreground = new SolidColorBrush(Color.FromRgb(148, 163, 184)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(60, 255, 255, 255)),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(10, 4, 10, 4),
+                Cursor = Cursors.Hand,
+                Margin = new Thickness(0, 0, 8, 0)
+            };
+            btnUpdateChangelog.Click += (s, e) => {
                 if (!string.IsNullOrEmpty(pendingUpdateUrl))
                 {
                     try { Process.Start(pendingUpdateUrl); } catch { }
                 }
             };
-            updateDock.Children.Add(btnUpdateBanner);
+            updateActionsStack.Children.Add(btnUpdateChangelog);
+
+            btnCloseUpdateBanner = new Button() {
+                Content = "✕",
+                Background = Brushes.Transparent,
+                Foreground = new SolidColorBrush(Color.FromRgb(148, 163, 184)),
+                BorderThickness = new Thickness(0),
+                Cursor = Cursors.Hand,
+                Padding = new Thickness(6, 2, 6, 2)
+            };
+            btnCloseUpdateBanner.Click += (s, e) => {
+                updateBannerBorder.Visibility = Visibility.Collapsed;
+            };
+            updateActionsStack.Children.Add(btnCloseUpdateBanner);
+
+            updateDock.Children.Add(updateActionsStack);
             updateBannerBorder.Child = updateDock;
             Grid.SetRow(updateBannerBorder, 1);
             mainGrid.Children.Add(updateBannerBorder);
@@ -1514,7 +1586,7 @@ namespace GreenLumaManager
 
                                     // Family Sharing Assessment
                                     bool isFs = true;
-                                    if (id == 1174180 || id == 271590 || id == 553850 || id == 359550 || id == 1222670) isFs = false;
+                                    if (id == 1174180 || id == 271590 || id == 359550 || id == 1222670) isFs = false;
                                     if (lowerName.Contains("rockstar") || lowerName.Contains("ea sports") || lowerName.Contains("ubisoft")) isFs = false;
 
                                     results.Add(new SearchResultItem() {
@@ -1713,6 +1785,7 @@ namespace GreenLumaManager
             FlowDirection = isAr ? FlowDirection.RightToLeft : FlowDirection.LeftToRight;
 
             txtLogoSub.Text = isAr ? "نظام التخفي" : "STEALTH HUB";
+            if (btnGuide != null) btnGuide.Content = isAr ? "📖 الدليل" : "📖 Guide";
             btnSettings.Content = isAr ? "⚙️ الإعدادات" : "⚙️ Settings";
             btnLangToggle.Content = isAr ? "🌐 English" : "🌐 العربية";
             btnCheckUpdate.Content = isAr ? "🔄 التحديثات" : "🔄 Update";
@@ -1952,6 +2025,13 @@ namespace GreenLumaManager
                         new SolidColorBrush(Color.FromRgb(110, 231, 183)) :
                         new SolidColorBrush(Color.FromRgb(255, 255, 255))
                 };
+                fsCardBadge.Cursor = Cursors.Hand;
+                fsCardBadge.ToolTip = isAr ? "انقر للتبديل الفوري لحالة المشاركة العائلية (Family Share)" : "Click to toggle Family Share status";
+                fsCardBadge.MouseDown += (s, e) => {
+                    game.familyShare = !game.familyShare;
+                    SaveGames();
+                    RenderGamesUI();
+                };
                 fsCardBadge.Child = txtFsCard;
                 badgesRow.Children.Add(fsCardBadge);
             }
@@ -2112,7 +2192,7 @@ namespace GreenLumaManager
                 bool isDlcType = false;
                 bool isFs = true;
 
-                if (appId == 1174180 || appId == 271590 || appId == 553850 || appId == 359550 || appId == 1222670) isFs = false;
+                if (appId == 1174180 || appId == 271590 || appId == 359550 || appId == 1222670) isFs = false;
 
                 try
                 {
@@ -2641,6 +2721,274 @@ namespace GreenLumaManager
                 MessageBoxButton.OK, MessageBoxImage.Information);
         }
 
+
+        // =========================================================================
+        // --- 🚀 STEP-BY-STEP FIRST TIME QUICK GUIDE (INTERACTIVE DIALOG) ---
+        // =========================================================================
+        private void OpenQuickGuideDialog()
+        {
+            bool isAr = (settings.lang == "ar");
+
+            var win = new Window() {
+                Title = isAr ? "دليل التشغيل السريع - GreenLuma 2026" : "GreenLuma 2026 - Quick Start Guide",
+                Width = 680,
+                Height = 620,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Owner = this,
+                Background = new SolidColorBrush(Color.FromRgb(11, 15, 25)),
+                Foreground = new SolidColorBrush(Color.FromRgb(248, 250, 252)),
+                FlowDirection = isAr ? FlowDirection.RightToLeft : FlowDirection.LeftToRight,
+                ResizeMode = ResizeMode.NoResize,
+                WindowStyle = WindowStyle.ToolWindow
+            };
+
+            var mainDock = new DockPanel() { Margin = new Thickness(24) };
+
+            // Bottom Got-It Button
+            var btnClose = new Button() {
+                Content = isAr ? "✅ فهمت كل شيء، لنبدأ اللعب!" : "✅ Got it! Let's Start Gaming",
+                FontSize = 13.5,
+                FontWeight = FontWeights.Bold,
+                Background = new SolidColorBrush(Color.FromRgb(16, 185, 129)),
+                Foreground = new SolidColorBrush(Color.FromRgb(5, 15, 10)),
+                Padding = new Thickness(24, 10, 24, 10),
+                BorderThickness = new Thickness(0),
+                Cursor = Cursors.Hand,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(0, 16, 0, 0)
+            };
+            btnClose.Click += (s, e) => win.Close();
+            DockPanel.SetDock(btnClose, Dock.Bottom);
+            mainDock.Children.Add(btnClose);
+
+            var scroll = new ScrollViewer() { VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+            var sp = new StackPanel();
+
+            // Header Title
+            var titleHeader = new StackPanel() { Margin = new Thickness(0, 0, 0, 20) };
+            titleHeader.Children.Add(new TextBlock() {
+                Text = isAr ? "🚀 دليل التشغيل السريع الشامل (خطوة بخطوة)" : "🚀 Step-by-Step Quick Start Guide",
+                FontSize = 18,
+                FontWeight = FontWeights.Bold,
+                Foreground = new SolidColorBrush(Color.FromRgb(16, 185, 129)),
+                Margin = new Thickness(0, 0, 0, 6)
+            });
+            titleHeader.Children.Add(new TextBlock() {
+                Text = isAr ? "تعلم كيفية تفعيل وتشغيل ألعابك وإضافاتك المفضلة وحقن ستيم في 4 خطوات بسيطة فقط:" : 
+                              "Learn how to unlock and play your favorite Steam games & DLCs in 4 simple steps:",
+                FontSize = 12.5,
+                Foreground = new SolidColorBrush(Color.FromRgb(148, 163, 184))
+            });
+            sp.Children.Add(titleHeader);
+
+            // Step Card Helper
+            Action<string, string, string, string> AddStepCard = (stepNum, icon, title, desc) => {
+                var card = new Border() {
+                    Background = new SolidColorBrush(Color.FromArgb(80, 15, 23, 42)),
+                    BorderBrush = new SolidColorBrush(Color.FromArgb(50, 255, 255, 255)),
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(8),
+                    Padding = new Thickness(16, 12, 16, 14),
+                    Margin = new Thickness(0, 0, 0, 12)
+                };
+                var stepStack = new StackPanel();
+                
+                var topRow = new StackPanel() { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 6) };
+                topRow.Children.Add(new TextBlock() {
+                    Text = stepNum + " " + icon + " ",
+                    FontSize = 15,
+                    FontWeight = FontWeights.Bold,
+                    Foreground = new SolidColorBrush(Color.FromRgb(16, 185, 129))
+                });
+                topRow.Children.Add(new TextBlock() {
+                    Text = title,
+                    FontSize = 14,
+                    FontWeight = FontWeights.Bold,
+                    Foreground = new SolidColorBrush(Color.FromRgb(241, 245, 249)),
+                    VerticalAlignment = VerticalAlignment.Center
+                });
+                stepStack.Children.Add(topRow);
+
+                stepStack.Children.Add(new TextBlock() {
+                    Text = desc,
+                    FontSize = 12,
+                    Foreground = new SolidColorBrush(Color.FromRgb(203, 213, 225)),
+                    TextWrapping = TextWrapping.Wrap,
+                    LineHeight = 18
+                });
+
+                card.Child = stepStack;
+                sp.Children.Add(card);
+            };
+
+            AddStepCard(
+                isAr ? "الخطوة الأولى" : "Step 1",
+                "🔍",
+                isAr ? "البحث وإضافة الألعاب والـ DLCs" : "Search & Add Your Games & DLCs",
+                isAr ? "اكتب اسم أي لعبة أو إضافة في شريط البحث بالأعلى، وستظهر لك النتائج فورا مع الأغلفة وحالة المشاركة العائلية (Family Share). اضغط على اللعبة لإضافتها لقائمتك. الألعاب الكاملة تحتوي على زر '+ إضافة الـ DLCs' لجلب كل إضافات اللعبة الرسمية بنقرة واحدة." :
+                       "Type any game or DLC title into the search bar above to see live Steam store suggestions with cover art and Family Sharing status. Click to add it to your library. Base games include a '+ Add DLCs' button to pull all official DLCs with one click.");
+
+            AddStepCard(
+                isAr ? "الخطوة الثانية" : "Step 2",
+                "🛡️",
+                isAr ? "اختيار وضع التخفي المناسب (Injection Mode)" : "Choose the Appropriate Stealth Mode",
+                isAr ? "• Standard Stealth (user32.dll): النمط الافتراضي لمعظم الحسابات الفردية.\n• Steam Families (user32SF.dll): نمط مخصص للحسابات المشتركة في ميزة عائلة ستيم.\nاختر النمط المناسب لك بنقرة زر واحدة من لوحة التحكم." :
+                       "• Standard Stealth (user32.dll): Recommended for standard individual Steam accounts.\n• Steam Families (user32SF.dll): Specialized mode for accounts participating in Steam Families.\nSelect the mode that matches your account with a single click.");
+
+            AddStepCard(
+                isAr ? "الخطوة الثالثة" : "Step 3",
+                "⚡",
+                isAr ? "تشغيل ستيم عبر GreenLuma" : "Launch Steam via GreenLuma",
+                isAr ? "اضغط على الزر الأخضر الكبير '⚡ تشغيل ستيم مع GREENLUMA'. سيقوم البرنامج بنسخ ملفات التخفي بأمان تام وتشغيل برنامج Steam. عند تسجيل الدخول، ستجد جميع الألعاب والإضافات المضافة مفتوحة وجاهزة للتحميل والتشغيل في مكتبة ستيم!" :
+                       "Click the big glowing green button '⚡ LAUNCH GREENLUMA STEAM'. The app places the stealth payloads safely and starts Steam. Open your Steam library to find your unlocked games and DLCs ready to download and play!");
+
+            AddStepCard(
+                isAr ? "الخطوة الرابعة" : "Step 4",
+                "🧹",
+                isAr ? "لعب آمن وتنظيف تلقائي عند الإغلاق" : "Safe Gaming & Automatic Cleanup on Exit",
+                isAr ? "العب ألعابك كالمعتاد! وعندما تنتهي، فقط أغلق برنامج Steam. يقوم GreenLuma Manager بمراقبة ستيم تلقائيا وحذف جميع ملفات الحقن فور إغلاقه فورا، ليبقى مجلد ستيم نظيفا وسليما 100% بدون أي أثر." :
+                       "Enjoy your games! When you are done playing, simply exit Steam normally. GreenLuma Manager automatically monitors Steam and immediately purges all injected files from your Steam folder the moment Steam exits, leaving your installation 100% clean.");
+
+            AddStepCard(
+                isAr ? "ميزة إضافية" : "Pro Tip",
+                "🔄",
+                isAr ? "التحديثات التلقائية المباشرة" : "Seamless In-App Updates & Overrides",
+                isAr ? "عند رفع أي تحديث جديد على GitHub، يكتشفه البرنامج تلقائيا ويظهر لك زر '⚡ تحديث وتثبيت فوري' ليقوم بتحميل النسخة الجديدة واستبدالها وإعادة التشغيل فورا بدون أي خطوات معقدة. كما يمكنك وضع ملفات user32.dll جديدة في مجلد البرنامج في أي وقت." :
+                       "Whenever a new release is published to GitHub, the app alerts you with a 1-click '⚡ Update & Restart Now' banner that downloads and updates in-place. You can also drop newer user32.dll files into the folder anytime!");
+
+            scroll.Content = sp;
+            mainDock.Children.Add(scroll);
+            win.Content = mainDock;
+
+            win.ShowDialog();
+        }
+
+        // =========================================================================
+        // --- 📥 IN-APP AUTO-UPDATER & HOT-SWAP ENGINE ---
+        // =========================================================================
+        private void StartInAppUpdate()
+        {
+            bool isAr = (settings.lang == "ar");
+            btnUpdateBanner.IsEnabled = false;
+            btnUpdateBanner.Content = isAr ? "⏳ جاري التنزيل..." : "⏳ Downloading...";
+
+            ThreadPool.QueueUserWorkItem((state) => {
+                try
+                {
+                    string currentExe = Process.GetCurrentProcess().MainModule.FileName;
+                    string currentDir = Path.GetDirectoryName(currentExe);
+                    string tempExe = Path.Combine(currentDir, "GreenLumaManager.new");
+                    string backupExe = Path.Combine(currentDir, "GreenLumaManager.old");
+
+                    string downloadUrl = pendingExeDownloadUrl;
+                    if (string.IsNullOrEmpty(downloadUrl))
+                    {
+                        downloadUrl = string.Format("https://github.com/{0}/releases/download/{1}/GreenLumaManager.exe", GITHUB_REPO, pendingLatestTag);
+                    }
+
+                    if (File.Exists(tempExe)) { try { File.Delete(tempExe); } catch { } }
+
+                    // 1. Download new executable with live percentage
+                    using (var wc = new WebClient())
+                    {
+                        wc.Headers.Add("User-Agent", "GreenLumaManager-Updater");
+                        var syncLock = new object();
+                        bool completed = false;
+                        Exception dlEx = null;
+
+                        wc.DownloadProgressChanged += (s, e) => {
+                            Dispatcher.Invoke((Action)(() => {
+                                txtUpdateBanner.Text = isAr ?
+                                    string.Format("⏳ جاري تنزيل التحديث ({0}%)...", e.ProgressPercentage) :
+                                    string.Format("⏳ Downloading update ({0}%)...", e.ProgressPercentage);
+                            }));
+                        };
+
+                        wc.DownloadFileCompleted += (s, e) => {
+                            lock (syncLock)
+                            {
+                                completed = true;
+                                dlEx = e.Error;
+                                Monitor.Pulse(syncLock);
+                            }
+                        };
+
+                        lock (syncLock)
+                        {
+                            wc.DownloadFileAsync(new Uri(downloadUrl), tempExe);
+                            Monitor.Wait(syncLock);
+                        }
+
+                        if (!completed || dlEx != null) throw (dlEx != null ? dlEx : new Exception("Download timed out or failed."));
+                    }
+
+                    // Validate downloaded executable
+                    if (!File.Exists(tempExe) || new FileInfo(tempExe).Length < 100000)
+                    {
+                        throw new Exception("Downloaded binary is missing or incomplete.");
+                    }
+
+                    // 2. Download accompanying payload DLLs if present in release
+                    if (pendingOtherAssets != null && pendingOtherAssets.Count > 0)
+                    {
+                        string stealthDir = Path.Combine(currentDir, "StealthMode");
+                        if (!Directory.Exists(stealthDir)) Directory.CreateDirectory(stealthDir);
+
+                        using (var wc = new WebClient())
+                        {
+                            wc.Headers.Add("User-Agent", "GreenLumaManager-Updater");
+                            foreach (var asset in pendingOtherAssets)
+                            {
+                                try
+                                {
+                                    string targetPath = Path.Combine(stealthDir, asset.Key);
+                                    wc.DownloadFile(new Uri(asset.Value), targetPath);
+                                }
+                                catch { }
+                            }
+                        }
+                    }
+
+                    // 3. Hot-swap the running executable in Windows
+                    if (File.Exists(backupExe))
+                    {
+                        try { File.Delete(backupExe); } catch { }
+                    }
+
+                    File.Move(currentExe, backupExe);
+                    File.Move(tempExe, currentExe);
+
+                    Dispatcher.Invoke((Action)(() => {
+                        txtUpdateBanner.Text = isAr ? "✅ اكتمل التحديث! جاري إعادة التشغيل..." : "✅ Update complete! Restarting...";
+                    }));
+
+                    Thread.Sleep(800);
+
+                    // 4. Launch new updated version and shut down current process
+                    Process.Start(currentExe);
+                    Dispatcher.Invoke((Action)(() => Application.Current.Shutdown()));
+                }
+                catch (Exception ex)
+                {
+                    Dispatcher.Invoke((Action)(() => {
+                        btnUpdateBanner.IsEnabled = true;
+                        btnUpdateBanner.Content = isAr ? "⚡ تحديث وتثبيت فوري" : "⚡ Update & Restart Now";
+                        txtUpdateBanner.Text = isAr ? "❌ تعذر التنزيل التلقائي. يمكنك التحميل يدويا." : "❌ Auto-update failed. You can download manually.";
+
+                        string errMsg = isAr ?
+                            ("تعذر إكمال التحديث التلقائي:\n" + ex.Message + "\n\nهل ترغب في فتح صفحة التحميل على GitHub؟") :
+                            ("Could not complete automatic update:\n" + ex.Message + "\n\nOpen download page on GitHub instead?");
+
+
+                        if (MessageBox.Show(errMsg, isAr ? "خطأ في التحديث" : "Update Error", MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes)
+                        {
+                            try { Process.Start(pendingUpdateUrl); } catch { }
+                        }
+                    }));
+                }
+            });
+        }
+
         // ==========================================
         // --- GITHUB RELEASE UPDATE CHECKER ---
         // ==========================================
@@ -2649,23 +2997,51 @@ namespace GreenLumaManager
             ThreadPool.QueueUserWorkItem((s) => {
                 string latestTag = "";
                 string releaseUrl = "https://github.com/" + GITHUB_REPO + "/releases";
+                string exeUrl = "";
+                var extraAssets = new List<KeyValuePair<string, string>>();
 
                 try
                 {
                     string apiUrl = "https://api.github.com/repos/" + GITHUB_REPO + "/releases/latest";
                     var req = (HttpWebRequest)WebRequest.Create(apiUrl);
                     req.UserAgent = "GreenLumaManager/" + CURRENT_VERSION;
-                    req.Timeout = 6000;
+                    req.Timeout = 8000;
                     using (var resp = req.GetResponse())
                     using (var reader = new StreamReader(resp.GetResponseStream()))
                     {
                         string json = reader.ReadToEnd();
                         var js = new JavaScriptSerializer();
                         var dict = js.Deserialize<Dictionary<string, object>>(json);
-                        if (dict != null && dict.ContainsKey("tag_name"))
+                        if (dict != null)
                         {
-                            latestTag = dict["tag_name"].ToString().Trim();
+                            if (dict.ContainsKey("tag_name")) latestTag = dict["tag_name"].ToString().Trim();
                             if (dict.ContainsKey("html_url")) releaseUrl = dict["html_url"].ToString();
+
+                            if (dict.ContainsKey("assets"))
+                            {
+                                var rawAssets = dict["assets"] as System.Collections.IEnumerable;
+                                if (rawAssets != null)
+                                {
+                                    foreach (var item in rawAssets)
+                                    {
+                                        var assetDict = item as Dictionary<string, object>;
+                                        if (assetDict != null && assetDict.ContainsKey("name") && assetDict.ContainsKey("browser_download_url"))
+                                        {
+                                            string aName = assetDict["name"].ToString();
+                                            string aUrl = assetDict["browser_download_url"].ToString();
+
+                                            if (aName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+                                            {
+                                                exeUrl = aUrl;
+                                            }
+                                            else
+                                            {
+                                                extraAssets.Add(new KeyValuePair<string, string>(aName, aUrl));
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -2677,20 +3053,28 @@ namespace GreenLumaManager
                     if (!string.IsNullOrEmpty(latestTag) && latestTag != CURRENT_VERSION)
                     {
                         pendingUpdateUrl = releaseUrl;
+                        pendingLatestTag = latestTag;
+                        pendingExeDownloadUrl = !string.IsNullOrEmpty(exeUrl) ? exeUrl : 
+                            string.Format("https://github.com/{0}/releases/download/{1}/GreenLumaManager.exe", GITHUB_REPO, latestTag);
+                        pendingOtherAssets = extraAssets;
+
                         txtUpdateBanner.Text = isAr ? 
-                            string.Format("🎉 يتوفر إصدار جديد ({0}) على GitHub! إصدارك الحالي هو {1}.", latestTag, CURRENT_VERSION) :
-                            string.Format("🎉 New update available ({0}) on GitHub! You are running {1}.", latestTag, CURRENT_VERSION);
+                            string.Format("🎉 يتوفر إصدار جديد ({0}) على GitHub! إصدارك الحالي: {1}", latestTag, CURRENT_VERSION) :
+                            string.Format("🎉 New update available ({0}) on GitHub! Your current version: {1}", latestTag, CURRENT_VERSION);
+                        btnUpdateChangelog.Content = isAr ? "ملاحظات الإصدار ↗" : "Release Notes ↗";
                         updateBannerBorder.Visibility = Visibility.Visible;
 
                         if (manualUserClick)
                         {
-                            if (MessageBox.Show(
-                                isAr ? string.Format("يتوفر إصدار أحدث ({0}). هل تود فتح صفحة التحميل على GitHub؟", latestTag) :
-                                       string.Format("A newer release ({0}) is available. Open download page on GitHub?", latestTag),
-                                isAr ? "تحديث متاح" : "Update Available",
-                                MessageBoxButton.YesNo, MessageBoxImage.Information) == MessageBoxResult.Yes)
+                            string promptMsg = isAr ?
+                                string.Format("يتوفر إصدار جديد ({0})!\nإصدارك الحالي: {1}\n\nهل ترغب في تنزيل التحديث وتثبيته تلقائيا الآن؟", latestTag, CURRENT_VERSION) :
+                                string.Format("A new version ({0}) is available!\nYour current version: {1}\n\nWould you like to automatically download and install it now?", latestTag, CURRENT_VERSION);
+
+
+
+                            if (MessageBox.Show(promptMsg, isAr ? "تحديث متوفر" : "Update Available", MessageBoxButton.YesNo, MessageBoxImage.Information) == MessageBoxResult.Yes)
                             {
-                                try { Process.Start(releaseUrl); } catch { }
+                                StartInAppUpdate();
                             }
                         }
                     }
