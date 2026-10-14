@@ -99,7 +99,7 @@ namespace GreenLumaManager
 
     public class MainWindow : Window
     {
-        public const string CURRENT_VERSION = "v1.3.9";
+        public const string CURRENT_VERSION = "v1.4.0";
         public const string GITHUB_REPO = "Mayer-ELbot/GreenLuma-Stealth-Manager";
 
         [DllImport("user32.dll", SetLastError = true)]
@@ -252,15 +252,18 @@ namespace GreenLumaManager
             bool justUpdated = false;
             try
             {
-                string oldBak = Path.Combine(appDir, "GreenLumaManager.old");
-                if (File.Exists(oldBak))
+                var oldBaks = Directory.GetFiles(appDir, "GreenLumaManager*.old");
+                if (oldBaks != null && oldBaks.Length > 0)
                 {
                     justUpdated = true;
                     ThreadPool.QueueUserWorkItem((state) => {
                         for (int r = 0; r < 10; r++)
                         {
-                            try { File.Delete(oldBak); break; }
-                            catch { Thread.Sleep(500); }
+                            foreach (var f in Directory.GetFiles(appDir, "GreenLumaManager*.old"))
+                            {
+                                try { File.Delete(f); } catch { }
+                            }
+                            Thread.Sleep(500);
                         }
                     });
                 }
@@ -3206,13 +3209,14 @@ namespace GreenLumaManager
                     }
 
                     // 3. Hot-swap the running executable in Windows
-                    if (File.Exists(backupExe))
-                    {
-                        try { File.Delete(backupExe); } catch { }
-                    }
-
+                    backupExe = Path.Combine(currentDir, string.Format("GreenLumaManager_{0}.old", DateTime.Now.Ticks));
                     File.Move(currentExe, backupExe);
-                    File.Move(tempExe, currentExe);
+
+                    for (int retry = 0; retry < 5; retry++)
+                    {
+                        try { File.Move(tempExe, currentExe); break; }
+                        catch { Thread.Sleep(200); }
+                    }
 
                     Dispatcher.Invoke((Action)(() => {
                         txtUpdateBanner.Text = isAr ? "✅ اكتمل التحديث! جاري إعادة التشغيل..." : "✅ Update complete! Restarting...";
