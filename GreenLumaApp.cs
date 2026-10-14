@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -98,8 +99,14 @@ namespace GreenLumaManager
 
     public class MainWindow : Window
     {
-        public const string CURRENT_VERSION = "v1.3.7";
+        public const string CURRENT_VERSION = "v1.3.8";
         public const string GITHUB_REPO = "Mayer-ELbot/GreenLuma-Stealth-Manager";
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
+
+        [DllImport("user32.dll", CharSet = CharSet.Auto)]
+        private static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
 
         private string appDir;
         private string steamDir;
@@ -775,7 +782,7 @@ namespace GreenLumaManager
             mainGrid.Children.Add(updateBannerBorder);
 
             // =========================================================================
-            // --- 2. STREAMLINED CONTROL DECK (NO CLUTTER, ZERO WHITE COMBOBOX!) ---
+            // --- 2. STREAMLINED CONTROL DECK (TIERED 2-ROW DESIGN, ZERO OVERLAP) ---
             // =========================================================================
             var controlBorder = new Border() {
                 Background = new SolidColorBrush(Color.FromRgb(14, 19, 30)),
@@ -783,32 +790,34 @@ namespace GreenLumaManager
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(12),
                 Margin = new Thickness(20, 10, 20, 8),
-                Padding = new Thickness(16, 14, 16, 14)
+                Padding = new Thickness(16, 12, 16, 14)
             };
-            var controlGrid = new Grid();
-            controlGrid.ColumnDefinitions.Add(new ColumnDefinition() { Width = new GridLength(1.4, GridUnitType.Star) }); // Left: Mode Pills & Cache
-            controlGrid.ColumnDefinitions.Add(new ColumnDefinition() { Width = new GridLength(1.3, GridUnitType.Star) }); // Center: Reactor Launch
-            controlGrid.ColumnDefinitions.Add(new ColumnDefinition() { Width = new GridLength(1.1, GridUnitType.Star) }); // Right: Telemetry
 
-            // Col 0: Mode Pills & Clear Cache Toggle
-            var leftCtrl = new StackPanel() { VerticalAlignment = VerticalAlignment.Center };
+            var deckStack = new StackPanel();
+
+            // --- TIER 1: OPTIONS & TELEMETRY STRIP ---
+            var tier1Grid = new Grid();
+            tier1Grid.ColumnDefinitions.Add(new ColumnDefinition() { Width = new GridLength(1, GridUnitType.Star) }); // Left: Mode Pills & Cache Toggle
+            tier1Grid.ColumnDefinitions.Add(new ColumnDefinition() { Width = GridLength.Auto }); // Right: Telemetry & Settings
+
+            // Left: Mode Header + Mode Pills + Cache Toggle
+            var optionsStack = new StackPanel() { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+
             lblModeHeader = new TextBlock() {
-                Text = "STEALTH INJECTION MODE:",
+                Text = "MODE:",
                 FontSize = 11,
                 FontWeight = FontWeights.Bold,
                 Foreground = new SolidColorBrush(Color.FromRgb(148, 163, 184)),
-                Margin = new Thickness(0, 0, 0, 8)
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 8, 0)
             };
-            leftCtrl.Children.Add(lblModeHeader);
+            optionsStack.Children.Add(lblModeHeader);
 
-            var modeRow = new StackPanel() { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8) };
-
-            // Segmented Cyber Mode Buttons
             btnModeStandard = new Button() {
-                Content = "🛡️ Standard Stealth",
+                Content = "🛡️ Classic (user32)",
                 FontSize = 11.5,
                 FontWeight = FontWeights.Bold,
-                Padding = new Thickness(12, 6, 12, 6),
+                Padding = new Thickness(12, 5, 12, 5),
                 BorderThickness = new Thickness(1),
                 Cursor = Cursors.Hand,
                 Margin = new Thickness(0, 0, 6, 0)
@@ -818,49 +827,117 @@ namespace GreenLumaManager
                 SaveSettings();
                 UpdateModeButtonStyles();
             };
-            modeRow.Children.Add(btnModeStandard);
+            optionsStack.Children.Add(btnModeStandard);
 
             btnModeFamilies = new Button() {
-                Content = "👥 Steam Families",
+                Content = "👥 Families (user32SF)",
                 FontSize = 11.5,
                 FontWeight = FontWeights.Bold,
-                Padding = new Thickness(12, 6, 12, 6),
+                Padding = new Thickness(12, 5, 12, 5),
                 BorderThickness = new Thickness(1),
-                Cursor = Cursors.Hand
+                Cursor = Cursors.Hand,
+                Margin = new Thickness(0, 0, 10, 0)
             };
             btnModeFamilies.Click += (s, e) => {
                 settings.mode = "families";
                 SaveSettings();
                 UpdateModeButtonStyles();
             };
-            modeRow.Children.Add(btnModeFamilies);
-            leftCtrl.Children.Add(modeRow);
+            optionsStack.Children.Add(btnModeFamilies);
 
-            // Toggle Pill for Clear AppCache
             btnToggleClearCache = new Button() {
-                Content = "🔥 Clear AppCache: OFF",
+                Content = "🔥 AppCache: OFF",
                 FontSize = 11,
                 FontWeight = FontWeights.SemiBold,
-                Padding = new Thickness(10, 4, 10, 4),
+                Padding = new Thickness(10, 5, 10, 5),
                 BorderThickness = new Thickness(1),
                 Cursor = Cursors.Hand,
-                HorizontalAlignment = HorizontalAlignment.Left
+                VerticalAlignment = VerticalAlignment.Center
             };
             btnToggleClearCache.Click += (s, e) => {
                 settings.clearAppCache = !settings.clearAppCache;
                 SaveSettings();
                 UpdateClearCacheButton();
             };
-            leftCtrl.Children.Add(btnToggleClearCache);
+            optionsStack.Children.Add(btnToggleClearCache);
 
-            Grid.SetColumn(leftCtrl, 0);
-            controlGrid.Children.Add(leftCtrl);
+            Grid.SetColumn(optionsStack, 0);
+            tier1Grid.Children.Add(optionsStack);
 
-            // Col 1: Centered Sequential Action Bar (1. Inject Files -> 2. Launch Steam)
-            var centerCtrl = new StackPanel() {
+            // Right: Telemetry Badges & Settings Button
+            var rightCtrl = new StackPanel() {
                 Orientation = Orientation.Horizontal,
                 VerticalAlignment = VerticalAlignment.Center,
-                HorizontalAlignment = HorizontalAlignment.Center
+                HorizontalAlignment = HorizontalAlignment.Right
+            };
+
+            var badgeUnlocked = new Border() {
+                Background = new SolidColorBrush(Color.FromArgb(40, 16, 185, 129)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(80, 16, 185, 129)),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(6),
+                Padding = new Thickness(8, 4, 8, 4),
+                Margin = new Thickness(0, 0, 6, 0),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            lblTelemetryUnlocked = new TextBlock() {
+                Text = "🎯 0 Unlocked",
+                FontSize = 11,
+                FontWeight = FontWeights.Bold,
+                Foreground = new SolidColorBrush(Color.FromRgb(110, 231, 183))
+            };
+            badgeUnlocked.Child = lblTelemetryUnlocked;
+            rightCtrl.Children.Add(badgeUnlocked);
+
+            var badgeSource = new Border() {
+                Background = new SolidColorBrush(Color.FromArgb(30, 15, 23, 42)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(50, 255, 255, 255)),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(6),
+                Padding = new Thickness(8, 4, 8, 4),
+                Margin = new Thickness(0, 0, 6, 0),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            lblTelemetrySource = new TextBlock() {
+                Text = "🛡️ Core",
+                FontSize = 11,
+                Foreground = new SolidColorBrush(Color.FromRgb(148, 163, 184))
+            };
+            badgeSource.Child = lblTelemetrySource;
+            rightCtrl.Children.Add(badgeSource);
+
+            btnDeckSettings = new Button() {
+                Content = "⚙️ Configure",
+                FontSize = 11,
+                Background = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)),
+                Foreground = new SolidColorBrush(Color.FromRgb(226, 232, 240)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(50, 255, 255, 255)),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(8, 4, 8, 4),
+                Cursor = Cursors.Hand,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            btnDeckSettings.Click += (s, e) => OpenSettingsDialog();
+            rightCtrl.Children.Add(btnDeckSettings);
+
+            Grid.SetColumn(rightCtrl, 1);
+            tier1Grid.Children.Add(rightCtrl);
+
+            deckStack.Children.Add(tier1Grid);
+
+            // --- SUBTLE DIVIDER ---
+            var deckDivider = new Border() {
+                Height = 1,
+                Background = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)),
+                Margin = new Thickness(0, 10, 0, 10)
+            };
+            deckStack.Children.Add(deckDivider);
+
+            // --- TIER 2: PRIMARY ACTION DECK (CENTERED HERO ROW) ---
+            var tier2Actions = new StackPanel() {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
             };
 
             btnInjectFiles = new Button() {
@@ -869,8 +946,8 @@ namespace GreenLumaManager
                 Foreground = new SolidColorBrush(Color.FromRgb(255, 255, 255)),
                 FontWeight = FontWeights.Bold,
                 FontSize = 13,
-                Padding = new Thickness(16, 11, 16, 11),
-                Margin = new Thickness(0, 0, 8, 0),
+                Padding = new Thickness(22, 10, 22, 10),
+                Margin = new Thickness(0, 0, 10, 0),
                 BorderThickness = new Thickness(0),
                 Cursor = Cursors.Hand
             };
@@ -889,8 +966,8 @@ namespace GreenLumaManager
                 Foreground = new SolidColorBrush(Color.FromRgb(5, 15, 10)),
                 FontWeight = FontWeights.ExtraBold,
                 FontSize = 13.5,
-                Padding = new Thickness(18, 11, 18, 11),
-                Margin = new Thickness(0, 0, 8, 0),
+                Padding = new Thickness(26, 10, 26, 10),
+                Margin = new Thickness(0, 0, 10, 0),
                 BorderThickness = new Thickness(0),
                 Cursor = Cursors.Hand
             };
@@ -909,7 +986,7 @@ namespace GreenLumaManager
                 Foreground = new SolidColorBrush(Color.FromRgb(255, 255, 255)),
                 FontWeight = FontWeights.Bold,
                 FontSize = 12.5,
-                Padding = new Thickness(14, 11, 14, 11),
+                Padding = new Thickness(16, 10, 16, 10),
                 BorderThickness = new Thickness(0),
                 Cursor = Cursors.Hand,
                 Visibility = Visibility.Collapsed
@@ -923,59 +1000,13 @@ namespace GreenLumaManager
             btnStop.Effect = stopGlow;
             btnStop.Click += (s, e) => StopSteamSession();
 
-            centerCtrl.Children.Add(btnInjectFiles);
-            centerCtrl.Children.Add(btnLaunch);
-            centerCtrl.Children.Add(btnStop);
-            Grid.SetColumn(centerCtrl, 1);
-            controlGrid.Children.Add(centerCtrl);
+            tier2Actions.Children.Add(btnInjectFiles);
+            tier2Actions.Children.Add(btnLaunch);
+            tier2Actions.Children.Add(btnStop);
 
-            // Col 2: Telemetry & Configure Button
-            var rightCtrl = new Border() {
-                Background = new SolidColorBrush(Color.FromRgb(10, 14, 22)),
-                BorderBrush = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)),
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(8),
-                Padding = new Thickness(10, 8, 10, 8),
-                VerticalAlignment = VerticalAlignment.Center
-            };
-            var telemetryStack = new StackPanel();
+            deckStack.Children.Add(tier2Actions);
 
-            lblTelemetryUnlocked = new TextBlock() {
-                Text = "🎯 Unlocked Items: 0",
-                FontSize = 11.5,
-                FontWeight = FontWeights.Bold,
-                Foreground = new SolidColorBrush(Color.FromRgb(16, 185, 129)),
-                Margin = new Thickness(0, 0, 0, 4)
-            };
-            telemetryStack.Children.Add(lblTelemetryUnlocked);
-
-            lblTelemetrySource = new TextBlock() {
-                Text = "🛡️ Payload: Embedded Core",
-                FontSize = 10.5,
-                Foreground = new SolidColorBrush(Color.FromRgb(148, 163, 184)),
-                Margin = new Thickness(0, 0, 0, 8)
-            };
-            telemetryStack.Children.Add(lblTelemetrySource);
-
-            btnDeckSettings = new Button() {
-                Content = "⚙️ Configure Paths & Args",
-                FontSize = 10.5,
-                Background = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)),
-                Foreground = new SolidColorBrush(Color.FromRgb(226, 232, 240)),
-                BorderBrush = new SolidColorBrush(Color.FromArgb(50, 255, 255, 255)),
-                BorderThickness = new Thickness(1),
-                Padding = new Thickness(6, 3, 6, 3),
-                Cursor = Cursors.Hand,
-                HorizontalAlignment = HorizontalAlignment.Left
-            };
-            btnDeckSettings.Click += (s, e) => OpenSettingsDialog();
-            telemetryStack.Children.Add(btnDeckSettings);
-
-            rightCtrl.Child = telemetryStack;
-            Grid.SetColumn(rightCtrl, 2);
-            controlGrid.Children.Add(rightCtrl);
-
-            controlBorder.Child = controlGrid;
+            controlBorder.Child = deckStack;
             Grid.SetRow(controlBorder, 2);
             mainGrid.Children.Add(controlBorder);
 
@@ -1294,8 +1325,10 @@ namespace GreenLumaManager
             bool isStandard = (settings.mode == "standard");
             bool isAr = (settings.lang == "ar");
 
-            btnModeStandard.Content = isAr ? "🛡️ التخفي الأساسي (user32.dll) [موصى به]" : "🛡️ Standard (user32.dll) [Recommended]";
-            btnModeFamilies.Content = isAr ? "👥 عائلات ستيم (user32SF.dll)" : "👥 Steam Families (user32SF.dll)";
+            btnModeStandard.Content = isAr ? "🛡️ كلاسيكي (user32)" : "🛡️ Classic (user32)";
+            btnModeFamilies.Content = isAr ? "👥 عائلات (user32SF)" : "👥 Families (user32SF)";
+            btnModeStandard.ToolTip = isAr ? "وضع التخفي الكلاسيكي عبر استبدال user32.dll (موصى به لمعظم الألعاب)" : "Classic stealth injection via user32.dll (Recommended for most games)";
+            btnModeFamilies.ToolTip = isAr ? "وضع عائلات ستيم عبر استبدال user32SF.dll (لمستخدمي ميزة العائلات)" : "Steam Families stealth injection via user32SF.dll";
 
             if (isStandard)
             {
@@ -1324,17 +1357,19 @@ namespace GreenLumaManager
             bool isAr = (settings.lang == "ar");
             if (settings.clearAppCache)
             {
-                btnToggleClearCache.Content = isAr ? "🔥 مسح الكاش: مفعل" : "🔥 Clear AppCache: ON";
+                btnToggleClearCache.Content = isAr ? "🔥 مسح الكاش: مفعل" : "🔥 AppCache: ON";
                 btnToggleClearCache.Background = new SolidColorBrush(Color.FromArgb(50, 245, 158, 11));
                 btnToggleClearCache.Foreground = new SolidColorBrush(Color.FromRgb(251, 191, 36));
                 btnToggleClearCache.BorderBrush = new SolidColorBrush(Color.FromRgb(245, 158, 11));
+                btnToggleClearCache.ToolTip = isAr ? "سيتم مسح كاش ستيم تلقائياً عبر DeleteSteamAppCache.exe قبل الحقن" : "Steam app cache will be cleared via DeleteSteamAppCache.exe before injection";
             }
             else
             {
-                btnToggleClearCache.Content = isAr ? "❄️ مسح الكاش: معطل" : "❄️ Clear AppCache: OFF";
+                btnToggleClearCache.Content = isAr ? "❄️ مسح الكاش: معطل" : "❄️ AppCache: OFF";
                 btnToggleClearCache.Background = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255));
                 btnToggleClearCache.Foreground = new SolidColorBrush(Color.FromRgb(148, 163, 184));
                 btnToggleClearCache.BorderBrush = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255));
+                btnToggleClearCache.ToolTip = isAr ? "لن يتم مسح كاش ستيم" : "Steam app cache will not be cleared";
             }
         }
 
@@ -1383,8 +1418,8 @@ namespace GreenLumaManager
             if (lblTelemetryUnlocked != null)
             {
                 lblTelemetryUnlocked.Text = isAr ? 
-                    string.Format("🎯 العناصر المفتوحة: {0}", total) : 
-                    string.Format("🎯 Unlocked Items: {0}", total);
+                    string.Format("🎯 {0} مفتوح", total) : 
+                    string.Format("🎯 {0} Unlocked", total);
             }
         }
 
@@ -1818,7 +1853,7 @@ namespace GreenLumaManager
             btnCheckUpdate.Content = isAr ? "🔄 التحديثات" : "🔄 Update";
             btnCleanAll.Content = isAr ? "🧹 تنظيف ستيم" : "🧹 Clean Steam";
 
-            lblModeHeader.Text = isAr ? "وضع التخفي (INJECTION MODE):" : "STEALTH INJECTION MODE:";
+            lblModeHeader.Text = isAr ? "وضع التخفي:" : "MODE:";
             UpdateModeButtonStyles();
             UpdateClearCacheButton();
 
@@ -1827,7 +1862,7 @@ namespace GreenLumaManager
             btnLaunch.Content = isAr ? "🚀 2. تشغيل ستيم" : "🚀 2. Launch Steam";
             btnStop.Content = isAr ? "🛑 إيقاف وحذف الملفات" : "🛑 Stop & Clean";
 
-            btnDeckSettings.Content = isAr ? "⚙️ تخصيص المسارات والإعدادات" : "⚙️ Configure Paths & Args";
+            btnDeckSettings.Content = isAr ? "⚙️ الإعدادات" : "⚙️ Settings";
 
             txtSearchPlaceholder.Text = isAr ? 
                 "ابحث عن أي لعبة أو إضافة على ستيم بالاسم (مثال: Arc Raiders, GTA V, Elden Ring) أو AppID..." : 
@@ -2516,7 +2551,9 @@ namespace GreenLumaManager
             GetPayloadBytes(targetDll, out src);
             if (lblTelemetrySource != null)
             {
-                lblTelemetrySource.Text = "🛡️ " + targetDll + ": " + src;
+                string shortSrc = src.Contains("StealthMode") ? "StealthMode" : (src.Contains("Local") ? "Local" : "Core");
+                lblTelemetrySource.Text = "🛡️ " + targetDll + " (" + shortSrc + ")";
+                lblTelemetrySource.ToolTip = "Payload Source: " + src;
             }
         }
 
@@ -2525,7 +2562,15 @@ namespace GreenLumaManager
         // =========================================================================
         private void RunDeleteSteamAppCacheTool()
         {
+            if (IsSteamRunning())
+            {
+                StopSteamProcess();
+                Thread.Sleep(500);
+            }
+
             string delExe = Path.Combine(appDir, "StealthMode", "DeleteSteamAppCache.exe");
+            if (!File.Exists(delExe))
+                delExe = @"e:\Wooork\greenluma\StealthMode\DeleteSteamAppCache.exe";
             if (!File.Exists(delExe))
                 delExe = Path.Combine(appDir, "DeleteSteamAppCache.exe");
 
@@ -2550,13 +2595,28 @@ namespace GreenLumaManager
                 {
                     var psi = new ProcessStartInfo(delExe) {
                         WorkingDirectory = Path.GetDirectoryName(delExe),
-                        UseShellExecute = false,
-                        CreateNoWindow = true
+                        UseShellExecute = true
                     };
                     var proc = Process.Start(psi);
                     if (proc != null)
                     {
-                        proc.WaitForExit(10000);
+                        var autoDismiss = new Thread(() => {
+                            for (int i = 0; i < 30; i++)
+                            {
+                                if (proc.HasExited) break;
+                                Thread.Sleep(150);
+                                IntPtr hWnd = FindWindow(null, "DeleteSteamAppCache");
+                                if (hWnd != IntPtr.Zero)
+                                {
+                                    Thread.Sleep(1200);
+                                    SendMessage(hWnd, 0x0010 /* WM_CLOSE */, IntPtr.Zero, IntPtr.Zero);
+                                    break;
+                                }
+                            }
+                        }) { IsBackground = true };
+                        autoDismiss.Start();
+
+                        proc.WaitForExit(3500);
                     }
                 }
                 catch { }
@@ -2613,8 +2673,11 @@ namespace GreenLumaManager
             }
 
             // 2. تشغيل أداة DeleteSteamAppCache.exe
-            RunDeleteSteamAppCacheTool();
-            Thread.Sleep(300);
+            if (settings.clearAppCache)
+            {
+                RunDeleteSteamAppCacheTool();
+                Thread.Sleep(300);
+            }
 
             // 3. تجهيز مجلد AppList وملف AppList.ini
             SyncAppListIni();
@@ -3332,7 +3395,7 @@ namespace GreenLumaManager
                 catch { settings = new AppSettings(); }
             }
 
-            if (string.IsNullOrEmpty(settings.mode)) settings.mode = "standard";
+            if (string.IsNullOrEmpty(settings.mode)) settings.mode = "families";
             if (string.IsNullOrEmpty(settings.steamArgs)) settings.steamArgs = "-inhibitbootstrap";
             if (string.IsNullOrEmpty(settings.lang)) settings.lang = "en";
 
