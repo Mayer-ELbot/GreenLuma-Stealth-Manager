@@ -99,7 +99,7 @@ namespace GreenLumaManager
 
     public class MainWindow : Window
     {
-        public const string CURRENT_VERSION = "v1.4.4";
+        public const string CURRENT_VERSION = "v1.4.5";
         public const string GITHUB_REPO = "Mayer-ELbot/GreenLuma-Stealth-Manager";
 
         [DllImport("user32.dll", SetLastError = true)]
@@ -107,6 +107,8 @@ namespace GreenLumaManager
 
         [DllImport("user32.dll", CharSet = CharSet.Auto)]
         private static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+
+        private const uint WM_CLOSE = 0x0010;
 
         private string appDir;
         private string steamDir;
@@ -142,10 +144,8 @@ namespace GreenLumaManager
         private string pendingLatestTag = "";
         private List<KeyValuePair<string, string>> pendingOtherAssets = new List<KeyValuePair<string, string>>();
 
-        // Control Deck (Clean Segmented Mode & Launch Deck)
-        private TextBlock lblModeHeader;
-        private Button btnModeStandard;
-        private Button btnModeFamilies;
+        // Control Deck (Streamlined 1-Click Launch & Stealth Actions)
+        private TextBlock txtStealthMode;
         private Button btnToggleClearCache;
         private Button btnRunAppCache;
         private Button btnInjectFiles;
@@ -210,6 +210,20 @@ namespace GreenLumaManager
             // Custom Frameless Window without white borders or grip
             WindowStyle = WindowStyle.None;
             ResizeMode = ResizeMode.CanResize;
+            BorderThickness = new Thickness(0);
+
+            try
+            {
+                var chrome = new System.Windows.Shell.WindowChrome {
+                    CaptionHeight = 0,
+                    ResizeBorderThickness = new Thickness(6),
+                    CornerRadius = new CornerRadius(0),
+                    GlassFrameThickness = new Thickness(0),
+                    UseAeroCaptionButtons = false
+                };
+                System.Windows.Shell.WindowChrome.SetWindowChrome(this, chrome);
+            }
+            catch { }
 
             this.Icon = CreateAppIcon();
 
@@ -804,59 +818,36 @@ namespace GreenLumaManager
             tier1Grid.ColumnDefinitions.Add(new ColumnDefinition() { Width = new GridLength(1, GridUnitType.Star) }); // Left: Mode Pills & Cache Toggle
             tier1Grid.ColumnDefinitions.Add(new ColumnDefinition() { Width = GridLength.Auto }); // Right: Telemetry & Settings
 
-            // Left: Mode Header + Mode Pills + Cache Toggle
+            // Left: Stealth Engine Badge + Cache Toggle + Quick Wipe Tool
             var optionsStack = new StackPanel() { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
 
-            lblModeHeader = new TextBlock() {
-                Text = "MODE:",
-                FontSize = 11,
-                FontWeight = FontWeights.Bold,
-                Foreground = new SolidColorBrush(Color.FromRgb(148, 163, 184)),
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 0, 8, 0)
+            var badgeStealthMode = new Border() {
+                Background = new SolidColorBrush(Color.FromArgb(35, 6, 182, 212)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(80, 6, 182, 212)),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(6),
+                Padding = new Thickness(10, 4, 10, 4),
+                Margin = new Thickness(0, 0, 8, 0),
+                VerticalAlignment = VerticalAlignment.Center
             };
-            optionsStack.Children.Add(lblModeHeader);
-
-            btnModeStandard = new Button() {
-                Content = "🛡️ Classic (user32)",
+            txtStealthMode = new TextBlock() {
+                Text = "🛡️ Stealth Engine (user32SF)",
                 FontSize = 11.5,
                 FontWeight = FontWeights.Bold,
-                Padding = new Thickness(12, 5, 12, 5),
-                BorderThickness = new Thickness(1),
-                Cursor = Cursors.Hand,
-                Margin = new Thickness(0, 0, 6, 0)
+                Foreground = new SolidColorBrush(Color.FromRgb(103, 232, 249))
             };
-            btnModeStandard.Click += (s, e) => {
-                settings.mode = "standard";
-                SaveSettings();
-                UpdateModeButtonStyles();
-            };
-            optionsStack.Children.Add(btnModeStandard);
-
-            btnModeFamilies = new Button() {
-                Content = "👥 Families (user32SF)",
-                FontSize = 11.5,
-                FontWeight = FontWeights.Bold,
-                Padding = new Thickness(12, 5, 12, 5),
-                BorderThickness = new Thickness(1),
-                Cursor = Cursors.Hand,
-                Margin = new Thickness(0, 0, 10, 0)
-            };
-            btnModeFamilies.Click += (s, e) => {
-                settings.mode = "families";
-                SaveSettings();
-                UpdateModeButtonStyles();
-            };
-            optionsStack.Children.Add(btnModeFamilies);
+            badgeStealthMode.Child = txtStealthMode;
+            optionsStack.Children.Add(badgeStealthMode);
 
             btnToggleClearCache = new Button() {
-                Content = "🔥 AppCache: OFF",
+                Content = "🔥 مسح الكاش التلقائي: مفعل",
                 FontSize = 11,
                 FontWeight = FontWeights.SemiBold,
-                Padding = new Thickness(10, 5, 10, 5),
+                Padding = new Thickness(10, 4, 10, 4),
                 BorderThickness = new Thickness(1),
                 Cursor = Cursors.Hand,
-                VerticalAlignment = VerticalAlignment.Center
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 8, 0)
             };
             btnToggleClearCache.Click += (s, e) => {
                 settings.clearAppCache = !settings.clearAppCache;
@@ -864,6 +855,20 @@ namespace GreenLumaManager
                 UpdateClearCacheButton();
             };
             optionsStack.Children.Add(btnToggleClearCache);
+
+            btnRunAppCache = new Button() {
+                Content = "🧹 مسح الكاش الآن",
+                FontSize = 11,
+                Background = new SolidColorBrush(Color.FromArgb(25, 255, 255, 255)),
+                Foreground = new SolidColorBrush(Color.FromRgb(203, 213, 225)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(8, 4, 8, 4),
+                Cursor = Cursors.Hand,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            btnRunAppCache.Click += (s, e) => ExecuteManualDeleteAppCache();
+            optionsStack.Children.Add(btnRunAppCache);
 
             Grid.SetColumn(optionsStack, 0);
             tier1Grid.Children.Add(optionsStack);
@@ -937,80 +942,65 @@ namespace GreenLumaManager
             };
             deckStack.Children.Add(deckDivider);
 
-            // --- TIER 2: PRIMARY ACTION DECK (CENTERED HERO ROW) ---
+            // --- TIER 2: HERO ACTION DECK (STREAMLINED 1-CLICK LAUNCH) ---
             var tier2Actions = new StackPanel() {
                 Orientation = Orientation.Horizontal,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center
             };
 
-            btnRunAppCache = new Button() {
-                Content = "🔥 1. مسح كاش ستيم",
-                Background = new SolidColorBrush(Color.FromRgb(217, 119, 6)),
-                Foreground = new SolidColorBrush(Color.FromRgb(255, 255, 255)),
-                FontWeight = FontWeights.Bold,
-                FontSize = 13,
-                Padding = new Thickness(20, 10, 20, 10),
-                Margin = new Thickness(0, 0, 10, 0),
+            // 1. Primary Hero 1-Click Launch Button
+            btnLaunch = new Button() {
+                Content = "🚀 تشغيل ستيم مع GreenLuma",
+                Background = new SolidColorBrush(Color.FromRgb(16, 185, 129)),
+                Foreground = new SolidColorBrush(Color.FromRgb(5, 15, 10)),
+                FontWeight = FontWeights.ExtraBold,
+                FontSize = 14,
+                Padding = new Thickness(36, 11, 36, 11),
+                Margin = new Thickness(0, 0, 12, 0),
                 BorderThickness = new Thickness(0),
                 Cursor = Cursors.Hand
             };
-            var cacheGlow = new DropShadowEffect() {
-                Color = Color.FromRgb(245, 158, 11),
-                BlurRadius = 14,
+            var launchGlow = new DropShadowEffect() {
+                Color = Color.FromRgb(16, 185, 129),
+                BlurRadius = 18,
                 ShadowDepth = 0,
-                Opacity = 0.75
+                Opacity = 0.85
             };
-            btnRunAppCache.Effect = cacheGlow;
-            btnRunAppCache.Click += (s, e) => ExecuteManualDeleteAppCache();
+            btnLaunch.Effect = launchGlow;
+            btnLaunch.Click += (s, e) => ExecuteSmartLaunch();
+            tier2Actions.Children.Add(btnLaunch);
 
+            // 2. Secondary Prepare / Inject Only Button
             btnInjectFiles = new Button() {
-                Content = "📦 2. تجهيز وحقن الملفات",
+                Content = "📦 تجهيز الملفات فقط",
                 Background = new SolidColorBrush(Color.FromRgb(2, 132, 199)),
                 Foreground = new SolidColorBrush(Color.FromRgb(255, 255, 255)),
                 FontWeight = FontWeights.Bold,
-                FontSize = 13,
-                Padding = new Thickness(22, 10, 22, 10),
+                FontSize = 12.5,
+                Padding = new Thickness(20, 10, 20, 10),
                 Margin = new Thickness(0, 0, 10, 0),
                 BorderThickness = new Thickness(0),
                 Cursor = Cursors.Hand
             };
             var injectGlow = new DropShadowEffect() {
                 Color = Color.FromRgb(2, 132, 199),
-                BlurRadius = 14,
+                BlurRadius = 12,
                 ShadowDepth = 0,
-                Opacity = 0.75
+                Opacity = 0.6
             };
             btnInjectFiles.Effect = injectGlow;
-            btnInjectFiles.Click += (s, e) => InjectFilesOnly();
+            btnInjectFiles.Click += (s, e) => InjectFilesOnly(true);
+            tier2Actions.Children.Add(btnInjectFiles);
 
-            btnLaunch = new Button() {
-                Content = "🚀 3. تشغيل ستيم",
-                Background = new SolidColorBrush(Color.FromRgb(16, 185, 129)),
-                Foreground = new SolidColorBrush(Color.FromRgb(5, 15, 10)),
-                FontWeight = FontWeights.ExtraBold,
-                FontSize = 13.5,
-                Padding = new Thickness(26, 10, 26, 10),
-                Margin = new Thickness(0, 0, 10, 0),
-                BorderThickness = new Thickness(0),
-                Cursor = Cursors.Hand
-            };
-            var launchGlow = new DropShadowEffect() {
-                Color = Color.FromRgb(16, 185, 129),
-                BlurRadius = 16,
-                ShadowDepth = 0,
-                Opacity = 0.8
-            };
-            btnLaunch.Effect = launchGlow;
-            btnLaunch.Click += (s, e) => LaunchSteamOnly();
-
+            // 3. Stop & Clean Button
             btnStop = new Button() {
                 Content = "🛑 إيقاف وحذف الملفات",
                 Background = new SolidColorBrush(Color.FromRgb(239, 68, 68)),
                 Foreground = new SolidColorBrush(Color.FromRgb(255, 255, 255)),
                 FontWeight = FontWeights.Bold,
                 FontSize = 12.5,
-                Padding = new Thickness(16, 10, 16, 10),
+                Padding = new Thickness(18, 10, 18, 10),
                 BorderThickness = new Thickness(0),
                 Cursor = Cursors.Hand,
                 Visibility = Visibility.Collapsed
@@ -1023,10 +1013,6 @@ namespace GreenLumaManager
             };
             btnStop.Effect = stopGlow;
             btnStop.Click += (s, e) => StopSteamSession();
-
-            tier2Actions.Children.Add(btnRunAppCache);
-            tier2Actions.Children.Add(btnInjectFiles);
-            tier2Actions.Children.Add(btnLaunch);
             tier2Actions.Children.Add(btnStop);
 
             deckStack.Children.Add(tier2Actions);
@@ -1347,33 +1333,11 @@ namespace GreenLumaManager
 
         private void UpdateModeButtonStyles()
         {
-            bool isStandard = (settings.mode == "standard");
             bool isAr = (settings.lang == "ar");
-
-            btnModeStandard.Content = isAr ? "🛡️ كلاسيكي (user32)" : "🛡️ Classic (user32)";
-            btnModeFamilies.Content = isAr ? "👥 عائلات (user32SF)" : "👥 Families (user32SF)";
-            btnModeStandard.ToolTip = isAr ? "وضع التخفي الكلاسيكي عبر استبدال user32.dll (موصى به لمعظم الألعاب)" : "Classic stealth injection via user32.dll (Recommended for most games)";
-            btnModeFamilies.ToolTip = isAr ? "وضع عائلات ستيم عبر استبدال user32SF.dll (لمستخدمي ميزة العائلات)" : "Steam Families stealth injection via user32SF.dll";
-
-            if (isStandard)
+            if (txtStealthMode != null)
             {
-                btnModeStandard.Background = new SolidColorBrush(Color.FromRgb(16, 185, 129));
-                btnModeStandard.Foreground = new SolidColorBrush(Color.FromRgb(5, 15, 10));
-                btnModeStandard.BorderBrush = new SolidColorBrush(Color.FromRgb(16, 185, 129));
-
-                btnModeFamilies.Background = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255));
-                btnModeFamilies.Foreground = new SolidColorBrush(Color.FromRgb(148, 163, 184));
-                btnModeFamilies.BorderBrush = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255));
-            }
-            else
-            {
-                btnModeFamilies.Background = new SolidColorBrush(Color.FromRgb(6, 182, 212));
-                btnModeFamilies.Foreground = new SolidColorBrush(Color.FromRgb(5, 15, 10));
-                btnModeFamilies.BorderBrush = new SolidColorBrush(Color.FromRgb(6, 182, 212));
-
-                btnModeStandard.Background = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255));
-                btnModeStandard.Foreground = new SolidColorBrush(Color.FromRgb(148, 163, 184));
-                btnModeStandard.BorderBrush = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255));
+                txtStealthMode.Text = isAr ? "🛡️ محرك التخفي الشامل (user32SF)" : "🛡️ Stealth Engine (user32SF)";
+                txtStealthMode.ToolTip = isAr ? "وضع التخفي الأحدث لستيم (متوافق مع نظام العائلات وجميع الألعاب)" : "Latest Steam Stealth Mode (Compatible with Families & all games)";
             }
         }
 
@@ -1878,23 +1842,29 @@ namespace GreenLumaManager
             btnCheckUpdate.Content = isAr ? "🔄 التحديثات" : "🔄 Update";
             btnCleanAll.Content = isAr ? "🧹 تنظيف ستيم" : "🧹 Clean Steam";
 
-            lblModeHeader.Text = isAr ? "وضع التخفي:" : "MODE:";
             UpdateModeButtonStyles();
             UpdateClearCacheButton();
 
             if (btnRunAppCache != null)
             {
-                btnRunAppCache.Content = isAr ? "🔥 1. مسح كاش ستيم" : "🔥 1. Clear AppCache";
-                btnRunAppCache.ToolTip = isAr ? "الخطوة الأولى: تشغيل DeleteSteamAppCache.exe ومسح الكاش تماماً" : "Step 1: Execute DeleteSteamAppCache.exe to completely wipe Steam appcache";
+                btnRunAppCache.Content = isAr ? "🧹 مسح الكاش الآن" : "🧹 Clear Cache Now";
+                btnRunAppCache.ToolTip = isAr ? "مسح كاش ستيم يدوياً فوراً عبر أداة DeleteSteamAppCache.exe" : "Manually run DeleteSteamAppCache.exe right now";
+            }
+            if (btnLaunch != null)
+            {
+                btnLaunch.Content = isAr ? "🚀 تشغيل ستيم مع GreenLuma" : "🚀 Launch Steam (GreenLuma)";
+                btnLaunch.ToolTip = isAr ? "تشغيل تلقائي متكامل: إغلاق ستيم، مسح الكاش، تجهيز الملفات وتشغيل ستيم فوراً" : "1-Click Smart Launch: Closes Steam, clears cache, injects files & starts Steam cleanly";
             }
             if (btnInjectFiles != null)
             {
-                btnInjectFiles.Content = isAr ? "📦 2. تجهيز وحقن الملفات" : "📦 2. Inject Files";
-                btnInjectFiles.ToolTip = isAr ? "الخطوة الثانية: تجهيز AppList وملف user32.dll داخل ستيم" : "Step 2: Prepare AppList folder and user32.dll in Steam";
+                btnInjectFiles.Content = isAr ? "📦 تجهيز الملفات فقط" : "📦 Inject Files Only";
+                btnInjectFiles.ToolTip = isAr ? "تجهيز وحقن ملفات GreenLuma و AppList داخل ستيم دون تشغيله" : "Prepare GreenLuma files & AppList in Steam directory without launching";
             }
-            btnLaunch.Content = isAr ? "🚀 3. تشغيل ستيم" : "🚀 3. Launch Steam";
-            btnLaunch.ToolTip = isAr ? "الخطوة الثالثة: تشغيل ستيم المحقون بـ GreenLuma" : "Step 3: Launch Steam with GreenLuma active";
-            btnStop.Content = isAr ? "🛑 إيقاف وحذف الملفات" : "🛑 Stop & Clean";
+            if (btnStop != null)
+            {
+                btnStop.Content = isAr ? "🛑 إيقاف وحذف الملفات" : "🛑 Stop & Clean Files";
+                btnStop.ToolTip = isAr ? "إغلاق ستيم وحذف user32.dll فوراً" : "Close Steam and remove user32.dll immediately";
+            }
 
             btnDeckSettings.Content = isAr ? "⚙️ الإعدادات" : "⚙️ Settings";
 
@@ -2670,8 +2640,27 @@ namespace GreenLumaManager
                     if (proc != null)
                     {
                         launched = true;
-                        // Execute the literal DeleteSteamAppCache.exe binary naturally
-                        proc.WaitForExit();
+                        if (!isManual)
+                        {
+                            // In 1-click automatic mode, auto-dismiss the DeleteSteamAppCache dialog if it pops up
+                            for (int w = 0; w < 15; w++)
+                            {
+                                Thread.Sleep(100);
+                                IntPtr hwnd = FindWindow(null, "DeleteSteamAppCache");
+                                if (hwnd != IntPtr.Zero)
+                                {
+                                    SendMessage(hwnd, WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
+                                    break;
+                                }
+                                if (proc.HasExited) break;
+                            }
+                            if (!proc.HasExited) proc.WaitForExit(1500);
+                        }
+                        else
+                        {
+                            // In manual mode, wait for the user to view and dismiss the tool's dialog
+                            proc.WaitForExit();
+                        }
                     }
                 }
                 catch (Exception ex)
@@ -2689,8 +2678,8 @@ namespace GreenLumaManager
             if (isManual && launched)
             {
                 MessageBox.Show(
-                    isAr ? "✅ تم تشغيل أداة DeleteSteamAppCache.exe الأصلية ومسح الكاش بنجاح!\n\nيمكنك الآن الانتقال إلى الخطوة التالية: '📦 2. تجهيز وحقن الملفات'." :
-                           "✅ DeleteSteamAppCache.exe executed and Steam cache cleared successfully!\n\nYou can now proceed to Step 2: '📦 2. Inject Files'.",
+                    isAr ? "✅ تم تشغيل أداة DeleteSteamAppCache.exe الأصلية ومسح الكاش بنجاح!" :
+                           "✅ DeleteSteamAppCache.exe executed and Steam cache cleared successfully!",
                     isAr ? "اكتمل مسح الكاش" : "AppCache Cleared",
                     MessageBoxButton.OK, MessageBoxImage.Information);
             }
@@ -2818,8 +2807,8 @@ namespace GreenLumaManager
             if (showSuccessDialog)
             {
                 MessageBox.Show(
-                    isAr ? "✅ تم تجهيز وحقن الملفات بنجاح (AppList و user32.dll)!\n\nالملفات الآن جاهزة 100% داخل مجلد ستيم.\nيمكنك الآن الضغط على الخطوة 3: '🚀 3. تشغيل ستيم' لفتح ستيم." :
-                           "✅ All files injected (AppList & user32.dll prepared successfully)!\n\nFiles are now in Steam directory.\nYou can now proceed to Step 3: '🚀 3. Launch Steam' to start Steam.",
+                    isAr ? "✅ تم تجهيز وحقن الملفات بنجاح (AppList و user32.dll)!\n\nالملفات الآن جاهزة 100% داخل مجلد ستيم.\nيمكنك الآن الضغط على زر '🚀 تشغيل ستيم مع GreenLuma' لفتح ستيم." :
+                           "✅ All files injected (AppList & user32.dll prepared successfully)!\n\nFiles are now in Steam directory.\nYou can now launch Steam via '🚀 Launch Steam (GreenLuma)'.",
                     isAr ? "اكتمل التجهيز والحقن" : "Injection Complete",
                     MessageBoxButton.OK, MessageBoxImage.Information);
             }
@@ -2828,6 +2817,11 @@ namespace GreenLumaManager
         }
 
         private void LaunchSteamOnly()
+        {
+            ExecuteSmartLaunch();
+        }
+
+        private void ExecuteSmartLaunch()
         {
             bool isAr = (settings.lang == "ar");
 
@@ -2850,13 +2844,24 @@ namespace GreenLumaManager
                 return;
             }
 
-            string destDll = Path.Combine(steamDir, "user32.dll");
-            if (!File.Exists(destDll) || !Directory.Exists(Path.Combine(steamDir, "AppList")))
+            // 1. إغلاق ستيم إن كان قيد التشغيل لضمان بيئة نظيفة تماماً
+            if (IsSteamRunning())
             {
-                // إذا لم تكن الملفات محقونة بعد، يتم حقنها أولاً
-                if (!InjectFilesOnly(false)) return;
+                StopSteamProcess();
+                Thread.Sleep(800);
             }
 
+            // 2. مسح كاش ستيم تلقائياً عبر DeleteSteamAppCache إن كان الخيار مفعلاً
+            if (settings.clearAppCache)
+            {
+                RunDeleteSteamAppCacheTool(false);
+                Thread.Sleep(300);
+            }
+
+            // 3. تجهيز وحقن ملفات التخفي (AppList.ini بدون BOM وملف user32SF كـ user32.dll)
+            if (!InjectFilesOnly(false)) return;
+
+            // 4. تشغيل ستيم مباشرة بدون معطيات تشويش
             string args = !string.IsNullOrEmpty(settings.steamArgs) ? settings.steamArgs.Trim() : "";
             try
             {
