@@ -99,7 +99,7 @@ namespace GreenLumaManager
 
     public class MainWindow : Window
     {
-        public const string CURRENT_VERSION = "v1.4.3";
+        public const string CURRENT_VERSION = "v1.4.4";
         public const string GITHUB_REPO = "Mayer-ELbot/GreenLuma-Stealth-Manager";
 
         [DllImport("user32.dll", SetLastError = true)]
@@ -2740,19 +2740,18 @@ namespace GreenLumaManager
 
             // 2. تجهيز مجلد AppList وملف AppList.ini
             SyncAppListIni();
-            string localAppList = Path.Combine(appDir, "AppList");
+            string stealthAppList = Path.Combine(appDir, "StealthMode", "AppList");
+            string sourceAppList = Directory.Exists(stealthAppList) ? stealthAppList : Path.Combine(appDir, "AppList");
             string steamAppList = Path.Combine(steamDir, "AppList");
             try
             {
-                if (Directory.Exists(steamAppList)) Directory.Delete(steamAppList, true);
-                Directory.CreateDirectory(steamAppList);
+                if (!Directory.Exists(steamAppList)) Directory.CreateDirectory(steamAppList);
+                foreach (var f in Directory.GetFiles(steamAppList, "*.txt")) { try { File.Delete(f); } catch { } }
 
-                if (Directory.Exists(localAppList))
+                string srcIni = Path.Combine(sourceAppList, "AppList.ini");
+                if (File.Exists(srcIni))
                 {
-                    foreach (var file in Directory.GetFiles(localAppList))
-                    {
-                        File.Copy(file, Path.Combine(steamAppList, Path.GetFileName(file)), true);
-                    }
+                    File.Copy(srcIni, Path.Combine(steamAppList, "AppList.ini"), true);
                 }
             }
             catch (Exception ex)
@@ -3523,20 +3522,11 @@ namespace GreenLumaManager
 
         private void SyncAppListIni()
         {
-            var games = new List<int>();
-            var dlcs = new List<int>();
+            var enabledIds = new List<int>();
             foreach (var g in gamesList)
             {
-                if (g.enabled)
-                {
-                    if (g.CheckIsDLC()) dlcs.Add(g.appId);
-                    else games.Add(g.appId);
-                }
+                if (g.enabled) enabledIds.Add(g.appId);
             }
-
-            var enabledIds = new List<int>();
-            enabledIds.AddRange(games);
-            enabledIds.AddRange(dlcs);
 
             var sb = new StringBuilder();
             sb.AppendLine("[AppList]");
@@ -3566,23 +3556,20 @@ namespace GreenLumaManager
             }
 
             string content = sb.ToString();
+            var utf8NoBom = new UTF8Encoding(false);
 
             string localAppListDir = Path.Combine(appDir, "AppList");
+            string stealthAppListDir = Path.Combine(appDir, "StealthMode", "AppList");
             try
             {
-                if (!Directory.Exists(localAppListDir))
-                {
-                    Directory.CreateDirectory(localAppListDir);
-                }
-                else
-                {
-                    foreach (var f in Directory.GetFiles(localAppListDir, "*.txt"))
-                    {
-                        try { File.Delete(f); } catch { }
-                    }
-                }
+                if (!Directory.Exists(localAppListDir)) Directory.CreateDirectory(localAppListDir);
+                foreach (var f in Directory.GetFiles(localAppListDir, "*.txt")) { try { File.Delete(f); } catch { } }
+                File.WriteAllText(Path.Combine(localAppListDir, "AppList.ini"), content, utf8NoBom);
 
-                File.WriteAllText(Path.Combine(localAppListDir, "AppList.ini"), content, Encoding.UTF8);
+                if (Directory.Exists(stealthAppListDir))
+                {
+                    File.WriteAllText(Path.Combine(stealthAppListDir, "AppList.ini"), content, utf8NoBom);
+                }
             }
             catch { }
 
@@ -3591,19 +3578,9 @@ namespace GreenLumaManager
                 string steamAppListDir = Path.Combine(steamDir, "AppList");
                 try
                 {
-                    if (!Directory.Exists(steamAppListDir))
-                    {
-                        Directory.CreateDirectory(steamAppListDir);
-                    }
-                    else
-                    {
-                        foreach (var f in Directory.GetFiles(steamAppListDir, "*.txt"))
-                        {
-                            try { File.Delete(f); } catch { }
-                        }
-                    }
-
-                    File.WriteAllText(Path.Combine(steamAppListDir, "AppList.ini"), content, Encoding.UTF8);
+                    if (!Directory.Exists(steamAppListDir)) Directory.CreateDirectory(steamAppListDir);
+                    foreach (var f in Directory.GetFiles(steamAppListDir, "*.txt")) { try { File.Delete(f); } catch { } }
+                    File.WriteAllText(Path.Combine(steamAppListDir, "AppList.ini"), content, utf8NoBom);
                 }
                 catch { }
             }
