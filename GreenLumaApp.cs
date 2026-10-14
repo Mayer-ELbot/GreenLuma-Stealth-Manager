@@ -3522,11 +3522,20 @@ namespace GreenLumaManager
 
         private void SyncAppListIni()
         {
-            var enabledIds = new List<int>();
+            var games = new List<int>();
+            var dlcs = new List<int>();
             foreach (var g in gamesList)
             {
-                if (g.enabled) enabledIds.Add(g.appId);
+                if (g.enabled)
+                {
+                    if (g.CheckIsDLC()) dlcs.Add(g.appId);
+                    else games.Add(g.appId);
+                }
             }
+
+            var enabledIds = new List<int>();
+            enabledIds.AddRange(games);
+            enabledIds.AddRange(dlcs);
 
             var sb = new StringBuilder();
             sb.AppendLine("[AppList]");
