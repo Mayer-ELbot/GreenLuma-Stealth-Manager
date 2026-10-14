@@ -98,7 +98,7 @@ namespace GreenLumaManager
 
     public class MainWindow : Window
     {
-        public const string CURRENT_VERSION = "v1.3.5";
+        public const string CURRENT_VERSION = "v1.3.6";
         public const string GITHUB_REPO = "Mayer-ELbot/GreenLuma-Stealth-Manager";
 
         private string appDir;
@@ -2645,15 +2645,14 @@ namespace GreenLumaManager
                 return;
             }
 
-            // Step 4: Inject user32.dll (or user32SF.dll for Steam Families)
-            bool isFamilies = (settings.mode == "families") || CheckIfSteamFamiliesEnrolled();
+            // Step 4: Inject user32SF.dll first into Steam, then rename to user32.dll before launching Steam
+            bool isFamilies = (settings.mode != "standard");
             string targetDllName = isFamilies ? "user32SF.dll" : "user32.dll";
             string srcDesc;
             byte[] dllBytes = GetPayloadBytes(targetDllName, out srcDesc);
 
             if (dllBytes == null || dllBytes.Length == 0)
             {
-                // Fallback to alternate DLL if primary missing
                 targetDllName = (targetDllName == "user32SF.dll") ? "user32.dll" : "user32SF.dll";
                 dllBytes = GetPayloadBytes(targetDllName, out srcDesc);
             }
@@ -2668,14 +2667,29 @@ namespace GreenLumaManager
             }
 
             string destDll = Path.Combine(steamDir, "user32.dll");
+            string tempSfDll = Path.Combine(steamDir, "user32SF.dll");
             try
             {
-                File.WriteAllBytes(destDll, dllBytes);
+                if (File.Exists(destDll)) File.Delete(destDll);
+                if (File.Exists(tempSfDll)) File.Delete(tempSfDll);
+
+                if (isFamilies)
+                {
+                    // Copy user32SF.dll into Steam folder first
+                    File.WriteAllBytes(tempSfDll, dllBytes);
+                    Thread.Sleep(200);
+                    // Rename user32SF.dll to user32.dll before opening Steam
+                    File.Move(tempSfDll, destDll);
+                }
+                else
+                {
+                    File.WriteAllBytes(destDll, dllBytes);
+                }
             }
             catch (Exception ex)
             {
                 MessageBox.Show(
-                    isAr ? ("فشل حقن user32.dll في مجلد Steam: " + ex.Message) : ("Failed injecting user32.dll into Steam folder: " + ex.Message),
+                    isAr ? ("فشل نسخ وإعادة تسمية user32.dll في مجلد Steam: " + ex.Message) : ("Failed placing and renaming user32.dll in Steam folder: " + ex.Message),
                     isAr ? "خطأ في الحقن" : "Injection Error",
                     MessageBoxButton.OK, MessageBoxImage.Error);
                 return;
@@ -2710,23 +2724,17 @@ namespace GreenLumaManager
                     Thread.Sleep(500);
                 }
 
-                Thread.Sleep(3000);
-
                 while (true)
                 {
                     if (!isInjected) break;
                     if (!IsSteamRunning())
                     {
-                        Thread.Sleep(2500);
-                        if (!IsSteamRunning())
-                        {
-                            DeleteInjectedFiles();
-                            isInjected = false;
-                            Dispatcher.Invoke((Action)(() => UpdateStatusUI()));
-                            break;
-                        }
+                        // Do not delete files automatically - user controls cleanup
+                        isInjected = false;
+                        Dispatcher.Invoke((Action)(() => UpdateStatusUI()));
+                        break;
                     }
-                    Thread.Sleep(1000);
+                    Thread.Sleep(2000);
                 }
             });
             monitorThread.IsBackground = true;
@@ -3452,10 +3460,7 @@ namespace GreenLumaManager
 
         private void MainWindow_Closing(object sender, System.ComponentModel.CancelEventArgs e)
         {
-            if (isInjected)
-            {
-                DeleteInjectedFiles();
-            }
+            // Keep Steam running with GreenLuma files even if manager UI is closed
         }
     }
 
