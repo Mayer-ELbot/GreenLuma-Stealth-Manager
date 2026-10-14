@@ -98,7 +98,7 @@ namespace GreenLumaManager
 
     public class MainWindow : Window
     {
-        public const string CURRENT_VERSION = "v1.3.6";
+        public const string CURRENT_VERSION = "v1.3.7";
         public const string GITHUB_REPO = "Mayer-ELbot/GreenLuma-Stealth-Manager";
 
         private string appDir;
@@ -140,6 +140,7 @@ namespace GreenLumaManager
         private Button btnModeStandard;
         private Button btnModeFamilies;
         private Button btnToggleClearCache;
+        private Button btnInjectFiles;
         private Button btnLaunch;
         private Button btnStop;
         private TextBlock lblTelemetryUnlocked;
@@ -855,71 +856,74 @@ namespace GreenLumaManager
             Grid.SetColumn(leftCtrl, 0);
             controlGrid.Children.Add(leftCtrl);
 
-            // Col 1: Centered Big Reactor Launch Button
-            var centerCtrl = new StackPanel() { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
+            // Col 1: Centered Sequential Action Bar (1. Inject Files -> 2. Launch Steam)
+            var centerCtrl = new StackPanel() {
+                Orientation = Orientation.Horizontal,
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Center
+            };
+
+            btnInjectFiles = new Button() {
+                Content = "📦 1. تجهيز وحقن الملفات",
+                Background = new SolidColorBrush(Color.FromRgb(2, 132, 199)),
+                Foreground = new SolidColorBrush(Color.FromRgb(255, 255, 255)),
+                FontWeight = FontWeights.Bold,
+                FontSize = 13,
+                Padding = new Thickness(16, 11, 16, 11),
+                Margin = new Thickness(0, 0, 8, 0),
+                BorderThickness = new Thickness(0),
+                Cursor = Cursors.Hand
+            };
+            var injectGlow = new DropShadowEffect() {
+                Color = Color.FromRgb(2, 132, 199),
+                BlurRadius = 14,
+                ShadowDepth = 0,
+                Opacity = 0.75
+            };
+            btnInjectFiles.Effect = injectGlow;
+            btnInjectFiles.Click += (s, e) => InjectFilesOnly();
+
             btnLaunch = new Button() {
-                Content = "⚡ LAUNCH GREENLUMA STEAM",
+                Content = "🚀 2. تشغيل ستيم",
                 Background = new SolidColorBrush(Color.FromRgb(16, 185, 129)),
                 Foreground = new SolidColorBrush(Color.FromRgb(5, 15, 10)),
                 FontWeight = FontWeights.ExtraBold,
-                FontSize = 14,
-                Padding = new Thickness(26, 12, 26, 12),
+                FontSize = 13.5,
+                Padding = new Thickness(18, 11, 18, 11),
+                Margin = new Thickness(0, 0, 8, 0),
                 BorderThickness = new Thickness(0),
                 Cursor = Cursors.Hand
             };
             var launchGlow = new DropShadowEffect() {
                 Color = Color.FromRgb(16, 185, 129),
-                BlurRadius = 18,
+                BlurRadius = 16,
                 ShadowDepth = 0,
-                Opacity = 0.85
+                Opacity = 0.8
             };
             btnLaunch.Effect = launchGlow;
-
-            var daBlur = new DoubleAnimation(12, 34, TimeSpan.FromSeconds(1.1)) {
-                AutoReverse = true,
-                RepeatBehavior = RepeatBehavior.Forever
-            };
-            launchGlow.BeginAnimation(DropShadowEffect.BlurRadiusProperty, daBlur);
-
-            var daOp = new DoubleAnimation(0.55, 1.0, TimeSpan.FromSeconds(1.1)) {
-                AutoReverse = true,
-                RepeatBehavior = RepeatBehavior.Forever
-            };
-            launchGlow.BeginAnimation(DropShadowEffect.OpacityProperty, daOp);
-
-            var btnScale = new ScaleTransform(1.0, 1.0);
-            btnLaunch.RenderTransformOrigin = new Point(0.5, 0.5);
-            btnLaunch.RenderTransform = btnScale;
-            btnLaunch.MouseEnter += (s, e) => {
-                btnScale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(1.0, 1.04, TimeSpan.FromMilliseconds(140)) { DecelerationRatio = 0.5 });
-                btnScale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(1.0, 1.04, TimeSpan.FromMilliseconds(140)) { DecelerationRatio = 0.5 });
-            };
-            btnLaunch.MouseLeave += (s, e) => {
-                btnScale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(1.04, 1.0, TimeSpan.FromMilliseconds(160)));
-                btnScale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(1.04, 1.0, TimeSpan.FromMilliseconds(160)));
-            };
-            btnLaunch.Click += (s, e) => LaunchSteamSession();
+            btnLaunch.Click += (s, e) => LaunchSteamOnly();
 
             btnStop = new Button() {
-                Content = "🛑 Stop Steam & Delete Files",
+                Content = "🛑 إيقاف وحذف الملفات",
                 Background = new SolidColorBrush(Color.FromRgb(239, 68, 68)),
                 Foreground = new SolidColorBrush(Color.FromRgb(255, 255, 255)),
                 FontWeight = FontWeights.Bold,
-                FontSize = 13.5,
-                Padding = new Thickness(22, 10, 22, 10),
+                FontSize = 12.5,
+                Padding = new Thickness(14, 11, 14, 11),
                 BorderThickness = new Thickness(0),
                 Cursor = Cursors.Hand,
                 Visibility = Visibility.Collapsed
             };
             var stopGlow = new DropShadowEffect() {
                 Color = Color.FromRgb(239, 68, 68),
-                BlurRadius = 14,
+                BlurRadius = 12,
                 ShadowDepth = 0,
                 Opacity = 0.7
             };
             btnStop.Effect = stopGlow;
             btnStop.Click += (s, e) => StopSteamSession();
 
+            centerCtrl.Children.Add(btnInjectFiles);
             centerCtrl.Children.Add(btnLaunch);
             centerCtrl.Children.Add(btnStop);
             Grid.SetColumn(centerCtrl, 1);
@@ -1818,8 +1822,10 @@ namespace GreenLumaManager
             UpdateModeButtonStyles();
             UpdateClearCacheButton();
 
-            btnLaunch.Content = isAr ? "⚡ تشغيل ستيم مع GREENLUMA" : "⚡ LAUNCH GREENLUMA STEAM";
-            btnStop.Content = isAr ? "🛑 إيقاف ستيم ومسح الملفات" : "🛑 Stop Steam & Delete Files";
+            if (btnInjectFiles != null)
+                btnInjectFiles.Content = isAr ? "📦 1. تجهيز وحقن الملفات" : "📦 1. Inject Files";
+            btnLaunch.Content = isAr ? "🚀 2. تشغيل ستيم" : "🚀 2. Launch Steam";
+            btnStop.Content = isAr ? "🛑 إيقاف وحذف الملفات" : "🛑 Stop & Clean";
 
             btnDeckSettings.Content = isAr ? "⚙️ تخصيص المسارات والإعدادات" : "⚙️ Configure Paths & Args";
 
@@ -2586,7 +2592,7 @@ namespace GreenLumaManager
             return false;
         }
 
-        private void LaunchSteamSession()
+        private bool InjectFilesOnly(bool showSuccessDialog = true)
         {
             bool isAr = (settings.lang == "ar");
 
@@ -2596,30 +2602,21 @@ namespace GreenLumaManager
                     isAr ? "لم يتم العثور على مجلد Steam! يرجى التأكد من مسار Steam في الإعدادات." : "Steam directory was not found! Please check your path in Settings.",
                     isAr ? "خطأ في المسار" : "Path Error",
                     MessageBoxButton.OK, MessageBoxImage.Error);
-                return;
+                return false;
             }
 
-            string steamExe = Path.Combine(steamDir, "steam.exe");
-            if (!File.Exists(steamExe))
-            {
-                MessageBox.Show(
-                    isAr ? ("تعذر العثور على steam.exe في: " + steamDir) : ("Could not find steam.exe at: " + steamDir),
-                    isAr ? "ملف غير موجود" : "File Missing",
-                    MessageBoxButton.OK, MessageBoxImage.Error);
-                return;
-            }
-
+            // 1. قفل ستيم إن كان يعمل
             if (IsSteamRunning())
             {
                 StopSteamProcess();
+                Thread.Sleep(600);
             }
 
-            // Step 1 & 2: Gracefully stop Steam and run DeleteSteamAppCache tool
-            StopSteamProcess();
-            Thread.Sleep(500);
+            // 2. تشغيل أداة DeleteSteamAppCache.exe
             RunDeleteSteamAppCacheTool();
+            Thread.Sleep(300);
 
-            // Step 3: Synchronize AppList folder and files
+            // 3. تجهيز مجلد AppList وملف AppList.ini
             SyncAppListIni();
             string localAppList = Path.Combine(appDir, "AppList");
             string steamAppList = Path.Combine(steamDir, "AppList");
@@ -2642,10 +2639,10 @@ namespace GreenLumaManager
                     isAr ? ("فشل نسخ مجلد AppList إلى Steam: " + ex.Message) : ("Failed copying AppList to Steam: " + ex.Message),
                     isAr ? "خطأ في الإعداد" : "Setup Error",
                     MessageBoxButton.OK, MessageBoxImage.Error);
-                return;
+                return false;
             }
 
-            // Step 4: Inject user32SF.dll first into Steam, then rename to user32.dll before launching Steam
+            // 4. نسخ user32SF.dll أولاً ثم إعادة تسميته لـ user32.dll
             bool isFamilies = (settings.mode != "standard");
             string targetDllName = isFamilies ? "user32SF.dll" : "user32.dll";
             string srcDesc;
@@ -2663,7 +2660,7 @@ namespace GreenLumaManager
                     isAr ? string.Format("تعذر استخراج ملف الحقن {0}!", targetDllName) : string.Format("Failed to extract stealth payload {0}!", targetDllName),
                     isAr ? "خطأ في الملفات" : "Payload Missing",
                     MessageBoxButton.OK, MessageBoxImage.Error);
-                return;
+                return false;
             }
 
             string destDll = Path.Combine(steamDir, "user32.dll");
@@ -2675,10 +2672,8 @@ namespace GreenLumaManager
 
                 if (isFamilies)
                 {
-                    // Copy user32SF.dll into Steam folder first
                     File.WriteAllBytes(tempSfDll, dllBytes);
                     Thread.Sleep(200);
-                    // Rename user32SF.dll to user32.dll before opening Steam
                     File.Move(tempSfDll, destDll);
                 }
                 else
@@ -2692,10 +2687,54 @@ namespace GreenLumaManager
                     isAr ? ("فشل نسخ وإعادة تسمية user32.dll في مجلد Steam: " + ex.Message) : ("Failed placing and renaming user32.dll in Steam folder: " + ex.Message),
                     isAr ? "خطأ في الحقن" : "Injection Error",
                     MessageBoxButton.OK, MessageBoxImage.Error);
+                return false;
+            }
+
+            isInjected = true;
+            UpdateStatusUI();
+
+            if (showSuccessDialog)
+            {
+                MessageBox.Show(
+                    isAr ? "✅ تم حقن الملفات بنجاح ومسح الكاش وتجهيز AppList و user32.dll!\n\nالملفات الآن جاهزة 100% داخل مجلد ستيم.\nيمكنك الآن الضغط على زر '🚀 2. تشغيل ستيم' لفتح ستيم." :
+                           "✅ All files injected, cache wiped, AppList & user32.dll prepared successfully!\n\nFiles are now in Steam directory.\nYou can now click '🚀 2. Launch Steam' to start Steam.",
+                    isAr ? "اكتمل التجهيز والحقن" : "Injection Complete",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+
+            return true;
+        }
+
+        private void LaunchSteamOnly()
+        {
+            bool isAr = (settings.lang == "ar");
+
+            if (string.IsNullOrEmpty(steamDir) || !Directory.Exists(steamDir))
+            {
+                MessageBox.Show(
+                    isAr ? "لم يتم العثور على مجلد Steam! يرجى التأكد من مسار Steam في الإعدادات." : "Steam directory was not found! Please check your path in Settings.",
+                    isAr ? "خطأ في المسار" : "Path Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
                 return;
             }
 
-            // Step 5: Launch Steam with inhibitbootstrap
+            string steamExe = Path.Combine(steamDir, "steam.exe");
+            if (!File.Exists(steamExe))
+            {
+                MessageBox.Show(
+                    isAr ? ("تعذر العثور على steam.exe في: " + steamDir) : ("Could not find steam.exe at: " + steamDir),
+                    isAr ? "ملف غير موجود" : "File Missing",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+
+            string destDll = Path.Combine(steamDir, "user32.dll");
+            if (!File.Exists(destDll) || !Directory.Exists(Path.Combine(steamDir, "AppList")))
+            {
+                // إذا لم تكن الملفات محقونة بعد، يتم حقنها أولاً
+                if (!InjectFilesOnly(false)) return;
+            }
+
             string args = string.IsNullOrEmpty(settings.steamArgs) ? "-inhibitbootstrap" : settings.steamArgs;
             try
             {
@@ -2729,7 +2768,6 @@ namespace GreenLumaManager
                     if (!isInjected) break;
                     if (!IsSteamRunning())
                     {
-                        // Do not delete files automatically - user controls cleanup
                         isInjected = false;
                         Dispatcher.Invoke((Action)(() => UpdateStatusUI()));
                         break;
@@ -3440,8 +3478,7 @@ namespace GreenLumaManager
                 borderStatusPulseRing.Background = new SolidColorBrush(Color.FromRgb(16, 185, 129));
                 txtStatus.Text = running ? 
                     (isAr ? "ستيم يعمل (محقون بـ GreenLuma)" : "Steam Running (Injected)") : 
-                    (isAr ? "الملفات محقونة (في انتظار ستيم)" : "Injected (Waiting for Steam)");
-                btnLaunch.Visibility = Visibility.Collapsed;
+                    (isAr ? "الملفات محقونة وجاهزة (اضغط تشغيل ستيم)" : "Files Injected (Ready to Launch)");
                 btnStop.Visibility = Visibility.Visible;
             }
             else
@@ -3451,8 +3488,7 @@ namespace GreenLumaManager
                 txtStatus.Text = running ? 
                     (isAr ? "ستيم يعمل (أصلي ونظيف)" : "Steam Running (Original)") : 
                     (isAr ? "ستيم مغلق (نظيف 100%)" : "Steam Inactive (Clean)");
-                btnLaunch.Visibility = Visibility.Visible;
-                btnStop.Visibility = Visibility.Collapsed;
+                btnStop.Visibility = running ? Visibility.Visible : Visibility.Collapsed;
             }
 
             RefreshPayloadSourceUI();
