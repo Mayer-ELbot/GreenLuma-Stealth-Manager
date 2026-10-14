@@ -1,22 +1,38 @@
-# Visual Studio / Rider / Mono
-.vs/
-*.user
-*.suo
-*.userosscache
-*.sln.docstates
-
-# Build & Compilations
-bin/
-obj/
+# Executables, DLLs & Binaries (Never commit to repo; use Releases tab)
+*.exe
+*.dll
+*.sys
+*.bin
 *.pdb
-*.log
+*.lib
+*.exp
+
+# Payloads & Injector Binaries (Triggers malware false positives on GitHub)
+NormalMode/
+StealthMode/
+x86DedicatedServers/
+
+# Obsolete Web Prototype & Legacy Scripts
+app.py
+static/
+Launch_UI.bat
+Run_GreenLuma.bat
+Run_GreenLuma.ps1
 __pycache__/
 *.pyc
 
-# Local runtime data (don't commit personal game configurations or injected steam temp files)
+# Local runtime & User configuration
 .app_profile/
 AppList/
 games.json
 settings.json
 GreenLuma_2026.log
-NoQuestion.bin
+*.log
+*.ini
+
+# IDE & OS files
+.vs/
+*.user
+*.suo
+.DS_Store
+Thumbs.db
