@@ -99,7 +99,7 @@ namespace GreenLumaManager
 
     public class MainWindow : Window
     {
-        public const string CURRENT_VERSION = "v1.4.1";
+        public const string CURRENT_VERSION = "v1.4.2";
         public const string GITHUB_REPO = "Mayer-ELbot/GreenLuma-Stealth-Manager";
 
         [DllImport("user32.dll", SetLastError = true)]
@@ -2638,6 +2638,25 @@ namespace GreenLumaManager
 
             string targetExe = (steamDelExe != null && File.Exists(steamDelExe)) ? steamDelExe : localDelExe;
 
+            // DeleteSteamAppCache.exe specifically calls DeleteFileW on <steamDir>\appcache\packageinfo.vdf.
+            // If packageinfo.vdf is missing (e.g. already deleted), DeleteFileW fails (ERROR_FILE_NOT_FOUND)
+            // and the tool displays "Failed to delete Steam app cache!".
+            // We ensure packageinfo.vdf exists so DeleteSteamAppCache.exe always deletes it cleanly and reports success.
+            if (!string.IsNullOrEmpty(steamDir))
+            {
+                try
+                {
+                    string cacheDir = Path.Combine(steamDir, "appcache");
+                    if (!Directory.Exists(cacheDir)) Directory.CreateDirectory(cacheDir);
+                    string pkgInfo = Path.Combine(cacheDir, "packageinfo.vdf");
+                    if (!File.Exists(pkgInfo))
+                    {
+                        File.WriteAllBytes(pkgInfo, new byte[] { 0 });
+                    }
+                }
+                catch { }
+            }
+
             bool launched = false;
             if (File.Exists(targetExe))
             {
@@ -2719,14 +2738,7 @@ namespace GreenLumaManager
                 Thread.Sleep(600);
             }
 
-            // 2. تشغيل أداة DeleteSteamAppCache.exe
-            if (settings.clearAppCache)
-            {
-                RunDeleteSteamAppCacheTool(false);
-                Thread.Sleep(300);
-            }
-
-            // 3. تجهيز مجلد AppList وملف AppList.ini
+            // 2. تجهيز مجلد AppList وملف AppList.ini
             SyncAppListIni();
             string localAppList = Path.Combine(appDir, "AppList");
             string steamAppList = Path.Combine(steamDir, "AppList");
@@ -2806,8 +2818,8 @@ namespace GreenLumaManager
             if (showSuccessDialog)
             {
                 MessageBox.Show(
-                    isAr ? "✅ تم حقن الملفات بنجاح ومسح الكاش وتجهيز AppList و user32.dll!\n\nالملفات الآن جاهزة 100% داخل مجلد ستيم.\nيمكنك الآن الضغط على زر '🚀 2. تشغيل ستيم' لفتح ستيم." :
-                           "✅ All files injected, cache wiped, AppList & user32.dll prepared successfully!\n\nFiles are now in Steam directory.\nYou can now click '🚀 2. Launch Steam' to start Steam.",
+                    isAr ? "✅ تم تجهيز وحقن الملفات بنجاح (AppList و user32.dll)!\n\nالملفات الآن جاهزة 100% داخل مجلد ستيم.\nيمكنك الآن الضغط على الخطوة 3: '🚀 3. تشغيل ستيم' لفتح ستيم." :
+                           "✅ All files injected (AppList & user32.dll prepared successfully)!\n\nFiles are now in Steam directory.\nYou can now proceed to Step 3: '🚀 3. Launch Steam' to start Steam.",
                     isAr ? "اكتمل التجهيز والحقن" : "Injection Complete",
                     MessageBoxButton.OK, MessageBoxImage.Information);
             }
@@ -3420,12 +3432,22 @@ namespace GreenLumaManager
 
             foreach (var p in Process.GetProcessesByName("steam"))
             {
-                try { p.Kill(); } catch { }
+                try { p.Kill(); p.WaitForExit(1500); } catch { }
             }
             foreach (var p in Process.GetProcessesByName("steamwebhelper"))
             {
-                try { p.Kill(); } catch { }
+                try { p.Kill(); p.WaitForExit(1500); } catch { }
             }
+            try
+            {
+                var psi = new ProcessStartInfo("taskkill", "/F /IM steam.exe /IM steamwebhelper.exe /T") {
+                    CreateNoWindow = true,
+                    UseShellExecute = false
+                };
+                var tk = Process.Start(psi);
+                if (tk != null) tk.WaitForExit(2500);
+            }
+            catch { }
             Thread.Sleep(500);
         }
 
