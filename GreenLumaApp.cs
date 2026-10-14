@@ -96,7 +96,7 @@ namespace GreenLumaManager
     public class MainWindow : Window
     {
         public const string CURRENT_VERSION = "v1.3.0";
-        public const string GITHUB_REPO = "marouanes/GreenLuma-Stealth-Manager";
+        public const string GITHUB_REPO = "Mayer-ELbot/GreenLuma-Stealth-Manager";
 
         private string appDir;
         private string steamDir;

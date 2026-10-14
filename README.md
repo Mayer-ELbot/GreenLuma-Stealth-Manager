@@ -54,7 +54,7 @@ It features a custom dark cyberpunk frameless UI, live Steam store title search 
 
 ### 🚀 Quick Start
 
-1. Download **`GreenLumaManager.exe`** from the [Releases](https://github.com/marouanes/GreenLuma-Stealth-Manager/releases) tab.
+1. Download **`GreenLumaManager.exe`** from the [Releases](https://github.com/Mayer-ELbot/GreenLuma-Stealth-Manager/releases) tab.
 2. Double-click **`GreenLumaManager.exe`**.
 3. Search for your games using the search bar or enter AppIDs.
 4. Select your mode:
@@ -71,7 +71,7 @@ No Visual Studio installation is required. Any Windows machine with .NET Framewo
 
 1. Clone the repository:
    ```cmd
-   git clone https://github.com/marouanes/GreenLuma-Stealth-Manager.git
+   git clone https://github.com/Mayer-ELbot/GreenLuma-Stealth-Manager.git
    cd GreenLuma-Stealth-Manager
    ```
 2. Run `Build_EXE.bat`:
@@ -116,7 +116,7 @@ No Visual Studio installation is required. Any Windows machine with .NET Framewo
 
 ### 🚀 خطوات التشغيل السريعة
 
-1. حمّل ملف **`GreenLumaManager.exe`** من صفحة الـ [Releases](https://github.com/marouanes/GreenLuma-Stealth-Manager/releases).
+1. حمّل ملف **`GreenLumaManager.exe`** من صفحة الـ [Releases](https://github.com/Mayer-ELbot/GreenLuma-Stealth-Manager/releases).
 2. شغل ملف **`GreenLumaManager.exe`**.
 3. ابحث عن الألعاب باستخدام شريط البحث أو أدخل أرقام الـ AppID.
 4. اختر وضع التشغيل:
