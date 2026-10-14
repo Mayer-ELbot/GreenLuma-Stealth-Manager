@@ -88,7 +88,7 @@ namespace GreenLumaManager
 
         public AppSettings()
         {
-            mode = "standard";
+            mode = "families";
             steamArgs = "-inhibitbootstrap";
             lang = "en";
             clearAppCache = false;
@@ -98,7 +98,7 @@ namespace GreenLumaManager
 
     public class MainWindow : Window
     {
-        public const string CURRENT_VERSION = "v1.3.3";
+        public const string CURRENT_VERSION = "v1.3.4";
         public const string GITHUB_REPO = "Mayer-ELbot/GreenLuma-Stealth-Manager";
 
         private string appDir;
@@ -239,15 +239,38 @@ namespace GreenLumaManager
                 }
             };
 
-            // Clean up any previous update leftovers
+            // Clean up any previous update leftovers and notify user if just updated
+            bool justUpdated = false;
             try
             {
                 string oldBak = Path.Combine(appDir, "GreenLumaManager.old");
-                if (File.Exists(oldBak)) File.Delete(oldBak);
+                if (File.Exists(oldBak))
+                {
+                    justUpdated = true;
+                    ThreadPool.QueueUserWorkItem((state) => {
+                        for (int r = 0; r < 10; r++)
+                        {
+                            try { File.Delete(oldBak); break; }
+                            catch { Thread.Sleep(500); }
+                        }
+                    });
+                }
                 string oldDownload = Path.Combine(appDir, "GreenLumaManager.new");
                 if (File.Exists(oldDownload)) File.Delete(oldDownload);
             }
             catch { }
+
+            if (justUpdated)
+            {
+                Dispatcher.BeginInvoke((Action)(() => {
+                    bool isAr = (settings.lang == "ar");
+                    MessageBox.Show(
+                        isAr ? string.Format("🎉 تم تحديث البرنامج بنجاح إلى الإصدار {0}!", CURRENT_VERSION) :
+                               string.Format("🎉 Program successfully updated to {0}!", CURRENT_VERSION),
+                        isAr ? "اكتمل التحديث" : "Update Success",
+                        MessageBoxButton.OK, MessageBoxImage.Information);
+                }));
+            }
 
             CheckForUpdatesAsync(false);
 
@@ -2482,11 +2505,12 @@ namespace GreenLumaManager
 
         private void RefreshPayloadSourceUI()
         {
+            string targetDll = (settings.mode == "families") ? "user32SF.dll" : "user32.dll";
             string src;
-            GetPayloadBytes("user32.dll", out src);
+            GetPayloadBytes(targetDll, out src);
             if (lblTelemetrySource != null)
             {
-                lblTelemetrySource.Text = "🛡️ Payload: " + src;
+                lblTelemetrySource.Text = "🛡️ " + targetDll + ": " + src;
             }
         }
 
@@ -2832,9 +2856,9 @@ namespace GreenLumaManager
             AddStepCard(
                 isAr ? "الخطوة الثانية" : "Step 2",
                 "🛡️",
-                isAr ? "اختيار وضع التخفي المناسب (Injection Mode)" : "Choose the Appropriate Stealth Mode",
-                isAr ? "• Standard Stealth (user32.dll): النمط الافتراضي لمعظم الحسابات الفردية.\n• Steam Families (user32SF.dll): نمط مخصص للحسابات المشتركة في ميزة عائلة ستيم.\nاختر النمط المناسب لك بنقرة زر واحدة من لوحة التحكم." :
-                       "• Standard Stealth (user32.dll): Recommended for standard individual Steam accounts.\n• Steam Families (user32SF.dll): Specialized mode for accounts participating in Steam Families.\nSelect the mode that matches your account with a single click.");
+                isAr ? "وضع التخفي المناسب (Injection Mode)" : "Appropriate Stealth Mode",
+                isAr ? "• Steam Families (user32SF.dll) [الافتراضي والموصى به]: مخصص لإصدارات ستيم الحديثة! يقوم البرنامج تلقائياً بنسخ ملف user32SF.dll وتسميته user32.dll داخل مجلد ستيم فور الضغط على زر التشغيل. لا تحتاج لنقل أو تسمية أي شيء يدوياً.\n• Standard Stealth (user32.dll): النمط القديم للحسابات الفردية الكلاسيكية." :
+                       "• Steam Families (user32SF.dll) [DEFAULT & RECOMMENDED]: Built for modern Steam! The app automatically copies user32SF.dll and renames it to user32.dll in your Steam directory upon clicking Launch. You do NOT need to copy or rename anything manually.\n• Standard Stealth (user32.dll): Legacy mode for classic Steam accounts.");
 
             AddStepCard(
                 isAr ? "الخطوة الثالثة" : "Step 3",
@@ -2851,11 +2875,11 @@ namespace GreenLumaManager
                        "Enjoy your games! When you are done playing, simply exit Steam normally. GreenLuma Manager automatically monitors Steam and immediately purges all injected files from your Steam folder the moment Steam exits, leaving your installation 100% clean.");
 
             AddStepCard(
-                isAr ? "ميزة إضافية" : "Pro Tip",
-                "🔄",
-                isAr ? "التحديثات التلقائية المباشرة" : "Seamless In-App Updates & Overrides",
-                isAr ? "عند رفع أي تحديث جديد على GitHub، يكتشفه البرنامج تلقائيا ويظهر لك زر '⚡ تحديث وتثبيت فوري' ليقوم بتحميل النسخة الجديدة واستبدالها وإعادة التشغيل فورا بدون أي خطوات معقدة. كما يمكنك وضع ملفات user32.dll جديدة في مجلد البرنامج في أي وقت." :
-                       "Whenever a new release is published to GitHub, the app alerts you with a 1-click '⚡ Update & Restart Now' banner that downloads and updates in-place. You can also drop newer user32.dll files into the folder anytime!");
+                isAr ? "أين تضع البرنامج؟" : "Where to Place the App?",
+                "📁",
+                isAr ? "مجلد البرنامج وملفات التحديثات (Folder Placement)" : "App Folder & Stealth Updates",
+                isAr ? "1. ضع ملف GreenLumaManager.exe في أي مجلد خاص به (مثلاً مجلد GreenLuma على سطح المكتب). لا تضعه داخل مجلد ستيم!\n2. لتحديث ملفات التخفي مستقبلاً: فقط ضع مجلد StealthMode بجانب GreenLumaManager.exe، وسيقوم البرنامج بسحب الملفات وتطبيقها تلقائياً بدون أي تدخل منك!\n3. لتحديث البرنامج نفسه: اضغط على زر '🔄 Update' وسيتم التحديث والاستبدال ذاتياً بنقرة واحدة." :
+                       "1. Place GreenLumaManager.exe in its own separate folder (e.g. GreenLuma on Desktop). Do NOT place it inside your Steam directory!\n2. To update stealth payloads: Simply place the StealthMode folder beside GreenLumaManager.exe. The app automatically detects and pulls all files from it!\n3. To update the app itself: Click '🔄 Update' to auto-update and restart in-place with 1 click.");
 
             scroll.Content = sp;
             mainDock.Children.Add(scroll);
@@ -2963,11 +2987,16 @@ namespace GreenLumaManager
                         txtUpdateBanner.Text = isAr ? "✅ اكتمل التحديث! جاري إعادة التشغيل..." : "✅ Update complete! Restarting...";
                     }));
 
-                    Thread.Sleep(800);
+                    Thread.Sleep(600);
 
-                    // 4. Launch new updated version and shut down current process
-                    Process.Start(currentExe);
-                    Dispatcher.Invoke((Action)(() => Application.Current.Shutdown()));
+                    // 4. Launch new updated version and terminate old process immediately
+                    var psi = new ProcessStartInfo() {
+                        FileName = currentExe,
+                        WorkingDirectory = currentDir,
+                        UseShellExecute = true
+                    };
+                    Process.Start(psi);
+                    Environment.Exit(0);
                 }
                 catch (Exception ex)
                 {
