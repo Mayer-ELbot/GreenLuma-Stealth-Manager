@@ -1,0 +1,22 @@
+# Visual Studio / Rider / Mono
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Build & Compilations
+bin/
+obj/
+*.pdb
+*.log
+__pycache__/
+*.pyc
+
+# Local runtime data (don't commit personal game configurations or injected steam temp files)
+.app_profile/
+AppList/
+games.json
+settings.json
+GreenLuma_2026.log
+NoQuestion.bin
