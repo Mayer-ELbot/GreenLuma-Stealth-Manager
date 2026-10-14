@@ -39,12 +39,14 @@
   - [What This Tool Does](#-what-this-tool-does)
   - [Key Features](#-key-features)
   - [Quick Start Guide](#-quick-start-guide)
+  - [How to Apply New GreenLuma Updates from CS.RIN.RU](#-how-to-apply-new-greenluma-updates-from-csrinru)
   - [How It Works (Under the Hood)](#-how-it-works-under-the-hood)
   - [Troubleshooting & FAQ](#-troubleshooting--faq)
 - [🇸🇦 التوثيق باللغة العربية](#-التوثيق-باللغة-العربية)
   - [ما هي وظيفة هذه الأداة المساعدة؟](#-ما-هي-وظيفة-هذه-الأداة-المساعدة؟)
   - [المميزات الرئيسية](#-المميزات-الرئيسية)
   - [دليل التشغيل السريع](#-دليل-التشغيل-السريع)
+  - [دليل تفصيلي: كيفية تطبيق وتحديث ملفات GreenLuma من منتدى CS.RIN.RU](#-دليل-تفصيلي-كيفية-تطبيق-وتحديث-ملفات-greenluma-من-منتدى-csrinru)
   - [كيف يعمل البرنامج تقنياً؟](#-كيف-يعمل-البرنامج-تقنياً؟)
   - [الأسئلة الشائعة وحلول المشاكل](#-الأسئلة-الشائعة-وحول-المشاكل)
 - [🛠️ Building From Source](#-building-from-source)
@@ -109,6 +111,58 @@ If you have ever used GreenLuma manually, you know the friction involved:
 
 ---
 
+## 🔄 How to Apply New GreenLuma Updates from CS.RIN.RU
+
+When Valve pushes a major Steam client update, the original GreenLuma author (**Steam006**) publishes updated stealth files on the **CS.RIN.RU** community forums.  
+**You do NOT need to wait for a new release of GreenLuma Stealth Manager or recompile anything!** The Manager is specifically engineered with hot-swappable payload detection.
+
+### Step 1: Download the Update Archive
+1. Visit the official GreenLuma thread on `cs.rin.ru`.
+2. Download the latest release `.7z` or `.zip` archive (e.g. `GreenLuma 2026 Stealth Update`).
+3. Extract the downloaded archive onto your computer.
+
+### Step 2: Locate the Files
+Inside the extracted folder, find the **`StealthMode`** subfolder. You will see:
+- `user32SF.dll` ⭐ *(The modern universal stealth engine for Steam & Steam Families)*
+- `user32.dll` *(Classic stealth hook)*
+- `DeleteSteamAppCache.exe` *(Cache wiper)*
+
+### Step 3: Place the Files beside `GreenLumaManager.exe`
+Choose whichever placement structure you prefer:
+
+#### Option A (Recommended & Cleanest — Subfolder):
+Copy the entire `StealthMode` folder and place it directly in the same folder as `GreenLumaManager.exe`:
+```text
+📁 MyGreenLumaFolder/
+├── 🚀 GreenLumaManager.exe
+└── 📁 StealthMode/
+    ├── 📄 user32SF.dll
+    ├── 📄 user32.dll
+    └── ⚙️ DeleteSteamAppCache.exe
+```
+
+#### Option B (Direct Placement):
+Or copy the `.dll` and `.exe` files directly into the same folder as `GreenLumaManager.exe`:
+```text
+📁 MyGreenLumaFolder/
+├── 🚀 GreenLumaManager.exe
+├── 📄 user32SF.dll
+├── 📄 user32.dll
+└── ⚙️ DeleteSteamAppCache.exe
+```
+
+### Step 4: Verification in the App
+Launch `GreenLumaManager.exe`. Look at the bottom-right status strip on the control deck:
+- You will see: `🛡️ user32SF.dll (StealthMode)` or `🛡️ user32SF.dll (Local Override)`.
+- This confirms that the Manager has detected and prioritized your new files over the internal embedded backup!
+- Clicking **`🚀 Launch Steam (GreenLuma)`** will now automatically deploy and execute your new files into Steam seamlessly.
+
+> [!TIP]
+> **What about updating GreenLuma Stealth Manager itself?**  
+> When new GUI features or bug fixes are published here on GitHub, the Manager will display a blue update banner at the top (or click **`🔄 Update`** in the header). It will automatically download, swap, and restart itself with one click.
+
+---
+
 ## ⚙️ How It Works (Under the Hood)
 
 | Step | Technical Implementation | Why It Matters |
@@ -126,7 +180,7 @@ If you have ever used GreenLuma manually, you know the friction involved:
 > **Solution:** Ensure you use the primary **`🚀 Launch Steam (GreenLuma)`** button. The Manager ensures `AppList.ini` is written without UTF-8 BOM, puts the base game at Slot 90, and automatically clears the Steam appcache before launching.
 
 #### Q: How do I update GreenLuma when a new version comes out?
-> **Solution:** You don't need to wait for a new Manager release! Simply drop the newly released `user32.dll` or `user32SF.dll` into the `StealthMode/` folder next to `GreenLumaManager.exe`. The Manager will immediately detect and load the updated payloads.
+> **Solution:** You don't need to wait for a new Manager release! Follow the [CS.RIN.RU Update Guide](#-how-to-apply-new-greenluma-updates-from-csrinru) above: drop the new `StealthMode/` folder or `user32SF.dll` next to `GreenLumaManager.exe`.
 
 #### Q: Is this a game crack or pirate software?
 > **Solution:** No. This is a configuration manager and launcher helper. It manages local configuration files and helper routines. Any game requiring third-party accounts, external DRM, or server-side authorization still requires legitimate credentials.
@@ -190,6 +244,58 @@ If you have ever used GreenLuma manually, you know the friction involved:
 
 ---
 
+## 🔄 دليل تفصيلي: كيفية تطبيق وتحديث ملفات GreenLuma من منتدى CS.RIN.RU
+
+عندما تقوم شركة Valve بإصدار تحديث رئيسي لبرنامج Steam، يقوم المطور الأصلي لـ GreenLuma (**Steam006**) برفع ملفات تخفي محدثة على **منتدى CS.RIN.RU**.  
+**الميزة الكبرى في هذا البرنامج (GreenLuma Stealth Manager) أنك لست بحاجة لانتظار أي تحديث للبرنامج نفسه لكي تستفيد من ملفات التخفي الجديدة!** فالبرنامج مصمم بذكاء ليتعرف فوراً على الملفات الأحدث الخارجية ويفضلها على الملفات المدمجة.
+
+### الخطوة 1: تنزيل الملفات من منتدى CS.RIN.RU
+1. ادخل إلى الموضوع الرسمي لـ GreenLuma على منتدى `cs.rin.ru`.
+2. حمّل أحدث ملف مضغوط تم نشره (مثلاً: `GreenLuma 2026 Stealth Update.zip` أو `.7z`).
+3. فك الضغط عن الملف في أي مكان على جهازك.
+
+### الخطوة 2: تحديد الملفات المطلوبة
+داخل المجلد المستخرج، ستجد مجلدات متعددة؛ ما يهمنا منها فقط هو مجلد **`StealthMode`**. بداخله ستجد الملفات التالية:
+- **`user32SF.dll`** ⭐ *(المحرك الأساسي الأحدث لستيم ونظام عائلات ستيم)*
+- **`user32.dll`** *(محرك التخفي الكلاسيكي البديل)*
+- **`DeleteSteamAppCache.exe`** *(أداة مسح كاش الحزم)*
+
+### الخطوة 3: وضع الملفات بجانب البرنامج
+اختر إحدى الطريقتين التاليتين:
+
+#### الطريقة الأولى (الأفضل والأنظف - مجلد StealthMode):
+انسخ مجلد `StealthMode` المستخرج بالكامل، وضعه بجانب ملف `GreenLumaManager.exe` مباشرة:
+```text
+📁 مجلد GreenLuma الخاص بك/
+├── 🚀 GreenLumaManager.exe
+└── 📁 StealthMode/
+    ├── 📄 user32SF.dll
+    ├── 📄 user32.dll
+    └── ⚙️ DeleteSteamAppCache.exe
+```
+
+#### الطريقة الثانية (وضع الملفات مباشرة بجانب البرنامج):
+انسخ ملفات `user32SF.dll` و `user32.dll` و `DeleteSteamAppCache.exe` وضعها مباشرة في نفس المجلد الذي يحتوي على `GreenLumaManager.exe`:
+```text
+📁 مجلد GreenLuma الخاص بك/
+├── 🚀 GreenLumaManager.exe
+├── 📄 user32SF.dll
+├── 📄 user32.dll
+└── ⚙️ DeleteSteamAppCache.exe
+```
+
+### الخطوة 4: التأكد من قراءة البرنامج للتحديث
+افتح برنامج `GreenLumaManager.exe`، وانظر إلى الشريط السفلي جهة اليمين:
+- ستلاحظ ظهور عبارة: `🛡️ user32SF.dll (StealthMode)` أو `🛡️ user32SF.dll (Local Override)`.
+- هذا يؤكد بنسبة 100% أن البرنامج تعرف تلقائياً على الملفات الخارجية الجديدة وقام بتفضيلها وتفعيلها بدلاً من الملفات المدمجة الاحتياطية!
+- الآن فقط اضغط على **`🚀 تشغيل ستيم مع GreenLuma`** وسيقوم البرنامج بتجهيز وحقن الملفات الجديدة تلقائياً في ستيم وتشغيله فوراً.
+
+> [!TIP]
+> **ماذا عن تحديث برنامج GreenLuma Stealth Manager نفسه؟**  
+> عند صدور أي ميزة جديدة أو تحسين لواجهة البرنامج على GitHub، سيظهر لك شريط أزرق أعلى البرنامج أو يمكنك الضغط على **`🔄 التحديثات`** وسيقوم البرنامج بتحديث نفسه تلقائياً دون أي خطوات يدوية.
+
+---
+
 ## ⚙️ كيف يعمل البرنامج تقنياً؟
 
 | الخاصية | التنفيذ البرمجي | الفائدة والأهمية |
@@ -207,7 +313,7 @@ If you have ever used GreenLuma manually, you know the friction involved:
 > **الحل:** استخدم الزر الرئيسي **`🚀 تشغيل ستيم مع GreenLuma`** حصراً؛ حيث يقوم البرنامج آلياً بمسح الكاش، وترتيب ملف `AppList.ini` بنظام خالٍ من BOM وبأولوية Slot 90 للعبة الأساسية، مما يضمن ظهورها كأنها مشتراة بحسابك مباشرة.
 
 #### س: كيف أقوم بتحديث ملفات GreenLuma مستقبلاً عند صدور نسخة جديدة؟
-> **الحل:** لست بحاجة لانتظار تحديث لهذا البرنامج! كل ما عليك هو أخذ ملفات الـ DLL الجديدة ووضعها بجانب ملف `GreenLumaManager.exe` أو داخل مجلد باسم `StealthMode/`، وسيقوم البرنامج تلقائياً باستخدام الملفات الأحدث بدلاً من المدمجة.
+> **الحل:** اتبع [دليل تحديثات CS.RIN.RU](#-دليل-تفصيلي-كيفية-تطبيق-وتحديث-ملفات-greenluma-من-منتدى-csrinru) الموضح بالأعلى: ضع مجلد `StealthMode/` أو ملف `user32SF.dll` بجانب ملف `GreenLumaManager.exe`.
 
 #### س: هل البرنامج آمن على حساب ستيم؟
 > **الحل:** نعم، فالبرنامج لا يقوم بأي تعديل دائم على ملفات ستيم، وملفات التخفي المؤقتة يتم حذفها فوراً عند الضغط على زر الإيقاف أو الخروج، ليعود مجلد ستيم أصلياً وخالياً من أي أثر.

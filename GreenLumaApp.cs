@@ -3089,30 +3089,30 @@ namespace GreenLumaManager
             AddStepCard(
                 isAr ? "الخطوة الثانية" : "Step 2",
                 "🛡️",
-                isAr ? "وضع التخفي المناسب (Injection Mode)" : "Appropriate Stealth Mode",
-                isAr ? "• Standard Stealth (user32.dll) [الافتراضي والأساسي]: هو النمط الأساسي لتشغيل ألعاب GreenLuma! يقوم البرنامج تلقائياً بنسخ ملف user32.dll إلى مجلد ستيم. لا تحتاج لنقل أو تسمية أي ملف بنفسك.\n• Steam Families (user32SF.dll): مخصص فقط إذا كان حسابك مشاركاً في عائلات ستيم." :
-                       "• Standard Stealth (user32.dll) [DEFAULT & PRIMARY]: The standard stealth payload! The app automatically injects user32.dll into your Steam directory. You do NOT need to copy or rename anything manually.\n• Steam Families (user32SF.dll): Alternative payload for accounts participating in Steam Families.");
+                isAr ? "محرك التخفي الشامل التلقائي (Stealth Engine)" : "Universal Stealth Engine",
+                isAr ? "يعتمد البرنامج تلقائياً على أحدث محرك تخفي لستيم (user32SF.dll)، وهو متوافق تماماً مع الحسابات العادية وحسابات عائلات ستيم وجميع الألعاب. يقوم البرنامج بنسخ وإعادة تسمية الملفات بصورة صحيحة ونظيفة بدون أي تدخل يدوي منك." :
+                       "The Manager automatically utilizes the latest universal stealth engine (user32SF.dll), fully compatible with standard Steam accounts, Steam Families, and all modern titles. The Manager handles all file copying and proper renaming automatically.");
 
             AddStepCard(
                 isAr ? "الخطوة الثالثة" : "Step 3",
-                "⚡",
-                isAr ? "تشغيل ستيم عبر GreenLuma" : "Launch Steam via GreenLuma",
-                isAr ? "اضغط على الزر الأخضر الكبير '⚡ تشغيل ستيم مع GREENLUMA'. سيقوم البرنامج بنسخ ملفات التخفي بأمان تام وتشغيل برنامج Steam. عند تسجيل الدخول، ستجد جميع الألعاب والإضافات المضافة مفتوحة وجاهزة للتحميل والتشغيل في مكتبة ستيم!" :
-                       "Click the big glowing green button '⚡ LAUNCH GREENLUMA STEAM'. The app places the stealth payloads safely and starts Steam. Open your Steam library to find your unlocked games and DLCs ready to download and play!");
+                "🚀",
+                isAr ? "التشغيل الذكي بضغطة زر واحدة (1-Click Launch)" : "1-Click Smart Launch",
+                isAr ? "اضغط على الزر الأخضر الرئيسي '🚀 تشغيل ستيم مع GreenLuma'. سيقوم البرنامج تلقائياً بإغلاق ستيم، مسح الكاش القديم عبر DeleteSteamAppCache، توليد ملف AppList.ini سليم ونقي بدون BOM، وحقن الملفات وتشغيل ستيم فوراً. عند تسجيل الدخول ستجد ألعابك مفتوحة وجاهزة للتحميل واللعب!" :
+                       "Click the primary green button '🚀 Launch Steam (GreenLuma)'. The app automatically closes any active Steam, wipes stale appcache via DeleteSteamAppCache, compiles a clean BOM-free AppList.ini with slot 90 priority, injects the payload, and starts Steam cleanly.");
 
             AddStepCard(
                 isAr ? "الخطوة الرابعة" : "Step 4",
                 "🧹",
-                isAr ? "لعب آمن وتنظيف تلقائي عند الإغلاق" : "Safe Gaming & Automatic Cleanup on Exit",
-                isAr ? "العب ألعابك كالمعتاد! وعندما تنتهي، فقط أغلق برنامج Steam. يقوم GreenLuma Manager بمراقبة ستيم تلقائيا وحذف جميع ملفات الحقن فور إغلاقه فورا، ليبقى مجلد ستيم نظيفا وسليما 100% بدون أي أثر." :
-                       "Enjoy your games! When you are done playing, simply exit Steam normally. GreenLuma Manager automatically monitors Steam and immediately purges all injected files from your Steam folder the moment Steam exits, leaving your installation 100% clean.");
+                isAr ? "لعب آمن وتنظيف شامل عند الإغلاق" : "Safe Gaming & 1-Click Cleanup",
+                isAr ? "العب ألعابك كالمعتاد! وعندما تنتهي، اضغط على زر '🛑 إيقاف وحذف الملفات' أو أغلق ستيم. يقوم البرنامج بحذف جميع ملفات الحقن فوراً من مجلد ستيم ليبقى مجلد حسابك نظيفاً وسليماً 100%." :
+                       "Enjoy your games! When you're done, click '🛑 Stop & Clean Files' or exit Steam. The app automatically purges all injected stealth artifacts from your Steam directory, keeping your installation 100% pristine.");
 
             AddStepCard(
-                isAr ? "أين تضع البرنامج؟" : "Where to Place the App?",
-                "📁",
-                isAr ? "مجلد البرنامج وملفات التحديثات (Folder Placement)" : "App Folder & Stealth Updates",
-                isAr ? "1. ضع ملف GreenLumaManager.exe في أي مجلد خاص به (مثلاً مجلد GreenLuma على سطح المكتب). لا تضعه داخل مجلد ستيم!\n2. لتحديث ملفات التخفي مستقبلاً: فقط ضع مجلد StealthMode بجانب GreenLumaManager.exe، وسيقوم البرنامج بسحب الملفات وتطبيقها تلقائياً بدون أي تدخل منك!\n3. لتحديث البرنامج نفسه: اضغط على زر '🔄 Update' وسيتم التحديث والاستبدال ذاتياً بنقرة واحدة." :
-                       "1. Place GreenLumaManager.exe in its own separate folder (e.g. GreenLuma on Desktop). Do NOT place it inside your Steam directory!\n2. To update stealth payloads: Simply place the StealthMode folder beside GreenLumaManager.exe. The app automatically detects and pulls all files from it!\n3. To update the app itself: Click '🔄 Update' to auto-update and restart in-place with 1 click.");
+                isAr ? "تحديثات CS.RIN.RU" : "CS.RIN.RU Updates",
+                "🔄",
+                isAr ? "كيفية تطبيق أي تحديث جديد من منتدى CS.RIN.RU؟" : "How to Apply New CS.RIN.RU Updates?",
+                isAr ? "عند صدور أي تحديث جديد لـ GreenLuma من المطور Steam006 على منتدى CS.RIN.RU:\n1. فك ضغط الملف المنزّل من المنتدى وستجد بداخله مجلد 'StealthMode'.\n2. انسخ مجلد 'StealthMode' وضعه بجانب ملف GreenLumaManager.exe مباشرة (أو انسخ ملفات user32SF.dll و DeleteSteamAppCache.exe بجانب البرنامج).\n3. سيقوم البرنامج فوراً بالتعرف على التحديث الجديد وإعطائه الأولوية تلقائياً (ستلاحظ في شريط الحالة بالأسفل ظهور StealthMode بدلاً من Core)!" :
+                       "When a new GreenLuma release is posted by Steam006 on CS.RIN.RU:\n1. Extract the downloaded archive and locate the 'StealthMode' folder.\n2. Place the 'StealthMode' folder directly beside GreenLumaManager.exe (or place user32SF.dll & DeleteSteamAppCache.exe beside the EXE).\n3. The Manager immediately detects the new files and prioritizes them automatically (the telemetry badge on the right will show StealthMode instead of Core)!");
 
             scroll.Content = sp;
             mainDock.Children.Add(scroll);
