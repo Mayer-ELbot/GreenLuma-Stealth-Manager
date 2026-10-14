@@ -98,7 +98,7 @@ namespace GreenLumaManager
 
     public class MainWindow : Window
     {
-        public const string CURRENT_VERSION = "v1.3.2";
+        public const string CURRENT_VERSION = "v1.3.3";
         public const string GITHUB_REPO = "Mayer-ELbot/GreenLuma-Stealth-Manager";
 
         private string appDir;
@@ -2523,29 +2523,26 @@ namespace GreenLumaManager
 
             if (settings.clearAppCache)
             {
-                string cacheDir = Path.Combine(steamDir, "appcache");
-                try
-                {
-                    if (Directory.Exists(cacheDir))
-                    {
-                        Directory.Delete(cacheDir, true);
-                    }
-                }
-                catch { }
+                StopSteamProcess();
+                Thread.Sleep(600);
 
-                string src;
-                byte[] delCacheExe = GetPayloadBytes("DeleteSteamAppCache.exe", out src);
-                if (delCacheExe != null)
+                string cacheDir = Path.Combine(steamDir, "appcache");
+                string pkgInfo = Path.Combine(cacheDir, "packageinfo.vdf");
+                string appInfo = Path.Combine(cacheDir, "appinfo.vdf");
+
+                for (int i = 0; i < 5; i++)
                 {
-                    string tmpExe = Path.Combine(steamDir, "DeleteSteamAppCache.exe");
                     try
                     {
-                        File.WriteAllBytes(tmpExe, delCacheExe);
-                        var p = Process.Start(tmpExe);
-                        p.WaitForExit(3000);
-                        if (File.Exists(tmpExe)) File.Delete(tmpExe);
+                        if (File.Exists(pkgInfo)) File.Delete(pkgInfo);
+                        if (File.Exists(appInfo)) File.Delete(appInfo);
+                        if (Directory.Exists(cacheDir)) Directory.Delete(cacheDir, true);
+                        break;
                     }
-                    catch { }
+                    catch
+                    {
+                        Thread.Sleep(300);
+                    }
                 }
             }
 
@@ -2605,7 +2602,11 @@ namespace GreenLumaManager
             string args = string.IsNullOrEmpty(settings.steamArgs) ? "-inhibitbootstrap" : settings.steamArgs;
             try
             {
-                Process.Start(steamExe, args);
+                var psi = new ProcessStartInfo(steamExe, args) {
+                    WorkingDirectory = steamDir,
+                    UseShellExecute = true
+                };
+                Process.Start(psi);
             }
             catch (Exception ex)
             {
@@ -3187,6 +3188,10 @@ namespace GreenLumaManager
             {
                 try { p.Kill(); } catch { }
             }
+            foreach (var p in Process.GetProcessesByName("steamwebhelper"))
+            {
+                try { p.Kill(); } catch { }
+            }
             Thread.Sleep(500);
         }
 
@@ -3285,6 +3290,11 @@ namespace GreenLumaManager
             {
                 Directory.CreateDirectory(localAppListDir);
                 File.WriteAllText(Path.Combine(localAppListDir, "AppList.ini"), content, Encoding.UTF8);
+
+                for (int i = 0; i < enabledIds.Count; i++)
+                {
+                    File.WriteAllText(Path.Combine(localAppListDir, i + ".txt"), enabledIds[i].ToString());
+                }
             }
             catch { }
 
