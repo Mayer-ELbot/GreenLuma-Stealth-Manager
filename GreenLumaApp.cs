@@ -88,7 +88,7 @@ namespace GreenLumaManager
 
         public AppSettings()
         {
-            mode = "families";
+            mode = "standard";
             steamArgs = "-inhibitbootstrap";
             lang = "en";
             clearAppCache = false;
@@ -98,7 +98,7 @@ namespace GreenLumaManager
 
     public class MainWindow : Window
     {
-        public const string CURRENT_VERSION = "v1.3.4";
+        public const string CURRENT_VERSION = "v1.3.5";
         public const string GITHUB_REPO = "Mayer-ELbot/GreenLuma-Stealth-Manager";
 
         private string appDir;
@@ -1290,8 +1290,8 @@ namespace GreenLumaManager
             bool isStandard = (settings.mode == "standard");
             bool isAr = (settings.lang == "ar");
 
-            btnModeStandard.Content = isAr ? "🛡️ التخفي العادي (user32)" : "🛡️ Standard Stealth";
-            btnModeFamilies.Content = isAr ? "👥 عائلات ستيم (user32SF)" : "👥 Steam Families";
+            btnModeStandard.Content = isAr ? "🛡️ التخفي الأساسي (user32.dll) [موصى به]" : "🛡️ Standard (user32.dll) [Recommended]";
+            btnModeFamilies.Content = isAr ? "👥 عائلات ستيم (user32SF.dll)" : "👥 Steam Families (user32SF.dll)";
 
             if (isStandard)
             {
@@ -2682,28 +2682,37 @@ namespace GreenLumaManager
                 MessageBoxButton.OK, MessageBoxImage.Information);
         }
 
-        private void DeleteInjectedFiles()
+        private static readonly string[] INJECTION_ARTIFACTS = new string[] {
+            "user32.dll", "user32SF.dll", "AppList", "DLLInjector.exe", "DLLInjector.ini",
+            "GreenLumaSettings_2026.exe", "GreenLuma_2026_x64.dll", "GreenLuma_2026_x86.dll",
+            "GreenLuma_2026.log", "GreenLuma2026_Files", "NoQuestion.bin", "DeleteSteamAppCache.exe"
+        };
+
+        private int DeleteInjectedFiles()
         {
-            if (string.IsNullOrEmpty(steamDir)) return;
+            if (string.IsNullOrEmpty(steamDir)) return 0;
 
-            string user32 = Path.Combine(steamDir, "user32.dll");
-            string user32sf = Path.Combine(steamDir, "user32SF.dll");
-            string appList = Path.Combine(steamDir, "AppList");
-
+            int deletedCount = 0;
             for (int i = 0; i < 6; i++)
             {
-                try
+                bool anyFailed = false;
+                foreach (var item in INJECTION_ARTIFACTS)
                 {
-                    if (File.Exists(user32)) File.Delete(user32);
-                    if (File.Exists(user32sf)) File.Delete(user32sf);
-                    if (Directory.Exists(appList)) Directory.Delete(appList, true);
-                    break;
+                    string target = Path.Combine(steamDir, item);
+                    try
+                    {
+                        if (File.Exists(target)) { File.Delete(target); deletedCount++; }
+                        else if (Directory.Exists(target)) { Directory.Delete(target, true); deletedCount++; }
+                    }
+                    catch
+                    {
+                        anyFailed = true;
+                    }
                 }
-                catch
-                {
-                    Thread.Sleep(800);
-                }
+                if (!anyFailed) break;
+                Thread.Sleep(500);
             }
+            return deletedCount;
         }
 
         private void PurgeAllArtifacts()
@@ -2719,24 +2728,7 @@ namespace GreenLumaManager
                 return;
 
             StopSteamProcess();
-
-            string[] artifacts = new string[] {
-                "user32.dll", "user32SF.dll", "AppList", "DLLInjector.exe", "DLLInjector.ini",
-                "GreenLumaSettings_2026.exe", "GreenLuma_2026_x64.dll", "GreenLuma_2026_x86.dll",
-                "GreenLuma_2026.log", "GreenLuma2026_Files", "NoQuestion.bin", "DeleteSteamAppCache.exe"
-            };
-
-            int purged = 0;
-            foreach (var item in artifacts)
-            {
-                string target = Path.Combine(steamDir, item);
-                try
-                {
-                    if (File.Exists(target)) { File.Delete(target); purged++; }
-                    else if (Directory.Exists(target)) { Directory.Delete(target, true); purged++; }
-                }
-                catch { }
-            }
+            int purged = DeleteInjectedFiles();
 
             isInjected = false;
             UpdateStatusUI();
@@ -2857,8 +2849,8 @@ namespace GreenLumaManager
                 isAr ? "الخطوة الثانية" : "Step 2",
                 "🛡️",
                 isAr ? "وضع التخفي المناسب (Injection Mode)" : "Appropriate Stealth Mode",
-                isAr ? "• Steam Families (user32SF.dll) [الافتراضي والموصى به]: مخصص لإصدارات ستيم الحديثة! يقوم البرنامج تلقائياً بنسخ ملف user32SF.dll وتسميته user32.dll داخل مجلد ستيم فور الضغط على زر التشغيل. لا تحتاج لنقل أو تسمية أي شيء يدوياً.\n• Standard Stealth (user32.dll): النمط القديم للحسابات الفردية الكلاسيكية." :
-                       "• Steam Families (user32SF.dll) [DEFAULT & RECOMMENDED]: Built for modern Steam! The app automatically copies user32SF.dll and renames it to user32.dll in your Steam directory upon clicking Launch. You do NOT need to copy or rename anything manually.\n• Standard Stealth (user32.dll): Legacy mode for classic Steam accounts.");
+                isAr ? "• Standard Stealth (user32.dll) [الافتراضي والأساسي]: هو النمط الأساسي لتشغيل ألعاب GreenLuma! يقوم البرنامج تلقائياً بنسخ ملف user32.dll إلى مجلد ستيم. لا تحتاج لنقل أو تسمية أي ملف بنفسك.\n• Steam Families (user32SF.dll): مخصص فقط إذا كان حسابك مشاركاً في عائلات ستيم." :
+                       "• Standard Stealth (user32.dll) [DEFAULT & PRIMARY]: The standard stealth payload! The app automatically injects user32.dll into your Steam directory. You do NOT need to copy or rename anything manually.\n• Steam Families (user32SF.dll): Alternative payload for accounts participating in Steam Families.");
 
             AddStepCard(
                 isAr ? "الخطوة الثالثة" : "Step 3",
@@ -3171,25 +3163,17 @@ namespace GreenLumaManager
             if (isInjected) return true;
             if (string.IsNullOrEmpty(steamDir)) return false;
 
-            string[] markers = new string[] {
-                "user32.dll",
-                "user32SF.dll",
-                "GreenLuma_2026_x64.dll",
-                "GreenLuma_2026_x86.dll",
-                "DLLInjector.exe",
-                "DLLInjector.ini"
-            };
+            // In Stealth Mode, Steam is injected if user32.dll or user32SF.dll is inside Steam directory
+            string user32 = Path.Combine(steamDir, "user32.dll");
+            string user32sf = Path.Combine(steamDir, "user32SF.dll");
+            if (File.Exists(user32) || File.Exists(user32sf)) return true;
 
-            foreach (var m in markers)
+            // In Normal Mode, check if DLLInjector process is currently running
+            try
             {
-                if (File.Exists(Path.Combine(steamDir, m))) return true;
+                if (Process.GetProcessesByName("DLLInjector").Length > 0) return true;
             }
-
-            string appListIni = Path.Combine(steamDir, "AppList", "AppList.ini");
-            if (File.Exists(appListIni)) return true;
-
-            string lumaFiles = Path.Combine(steamDir, "GreenLuma2026_Files");
-            if (Directory.Exists(lumaFiles)) return true;
+            catch { }
 
             return false;
         }
@@ -3273,6 +3257,7 @@ namespace GreenLumaManager
 
             UpdateTabButtonStyles();
             RenderGamesUI();
+            SyncAppListIni();
         }
 
         private void SaveGames()
@@ -3298,10 +3283,21 @@ namespace GreenLumaManager
 
             var sb = new StringBuilder();
             sb.AppendLine("[AppList]");
+            sb.AppendLine("# Format:");
+            sb.AppendLine("# Old AppID = New AppID to unlock");
+            sb.AppendLine("# Remove the # before the old AppID");
+            sb.AppendLine();
 
-            for (int i = 0; i < Math.Min(enabledIds.Count, DEFAULT_SLOTS.Length); i++)
+            for (int i = 0; i < DEFAULT_SLOTS.Length; i++)
             {
-                sb.AppendLine(string.Format("{0} = {1}", DEFAULT_SLOTS[i], enabledIds[i]));
+                if (i < enabledIds.Count)
+                {
+                    sb.AppendLine(string.Format("{0} = {1}", DEFAULT_SLOTS[i], enabledIds[i]));
+                }
+                else
+                {
+                    sb.AppendLine(string.Format("#{0} = ", DEFAULT_SLOTS[i]));
+                }
             }
 
             if (enabledIds.Count > DEFAULT_SLOTS.Length)
@@ -3317,7 +3313,18 @@ namespace GreenLumaManager
             string localAppListDir = Path.Combine(appDir, "AppList");
             try
             {
-                Directory.CreateDirectory(localAppListDir);
+                if (!Directory.Exists(localAppListDir))
+                {
+                    Directory.CreateDirectory(localAppListDir);
+                }
+                else
+                {
+                    foreach (var f in Directory.GetFiles(localAppListDir, "*.txt"))
+                    {
+                        try { File.Delete(f); } catch { }
+                    }
+                }
+
                 File.WriteAllText(Path.Combine(localAppListDir, "AppList.ini"), content, Encoding.UTF8);
 
                 for (int i = 0; i < enabledIds.Count; i++)
@@ -3329,10 +3336,22 @@ namespace GreenLumaManager
 
             if (!string.IsNullOrEmpty(steamDir))
             {
-                string steamAppList = Path.Combine(steamDir, "AppList", "AppList.ini");
-                if (File.Exists(steamAppList))
+                string steamAppListDir = Path.Combine(steamDir, "AppList");
+                if (Directory.Exists(steamAppListDir))
                 {
-                    try { File.WriteAllText(steamAppList, content, Encoding.UTF8); } catch { }
+                    try
+                    {
+                        foreach (var f in Directory.GetFiles(steamAppListDir, "*.txt"))
+                        {
+                            try { File.Delete(f); } catch { }
+                        }
+                        File.WriteAllText(Path.Combine(steamAppListDir, "AppList.ini"), content, Encoding.UTF8);
+                        for (int i = 0; i < enabledIds.Count; i++)
+                        {
+                            File.WriteAllText(Path.Combine(steamAppListDir, i + ".txt"), enabledIds[i].ToString());
+                        }
+                    }
+                    catch { }
                 }
             }
         }
