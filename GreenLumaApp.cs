@@ -1881,12 +1881,27 @@ namespace GreenLumaManager
             catch { }
             imgContainer.Children.Add(img);
 
-            var badgesRow = new DockPanel() { Margin = new Thickness(8), VerticalAlignment = VerticalAlignment.Top };
+            var imgTint = new Border() {
+                Background = new LinearGradientBrush(
+                    Color.FromArgb(40, 11, 15, 25),
+                    Color.FromArgb(90, 11, 15, 25),
+                    new Point(0, 0),
+                    new Point(0, 1)
+                )
+            };
+            imgContainer.Children.Add(imgTint);
+
+            var badgesRow = new DockPanel() { 
+                Margin = new Thickness(8), 
+                VerticalAlignment = VerticalAlignment.Top,
+                LastChildFill = false 
+            };
 
             // 1. Clickable Type Badge (1-click toggle!)
             var typeBadge = new Border() {
                 CornerRadius = new CornerRadius(4),
                 Padding = new Thickness(8, 3, 8, 3),
+                HorizontalAlignment = isAr ? HorizontalAlignment.Right : HorizontalAlignment.Left,
                 Background = isActuallyDlc ? 
                     new SolidColorBrush(Color.FromRgb(245, 158, 11)) : 
                     new SolidColorBrush(Color.FromRgb(16, 185, 129)),
@@ -2910,8 +2925,8 @@ namespace GreenLumaManager
                 borderStatusDot.Background = new SolidColorBrush(Color.FromRgb(16, 185, 129));
                 borderStatusPulseRing.Background = new SolidColorBrush(Color.FromRgb(16, 185, 129));
                 txtStatus.Text = running ? 
-                    (isAr ? "🟢 ستيم يعمل (محقون بـ GreenLuma)" : "🟢 Steam Running (Injected)") : 
-                    (isAr ? "🟡 الملفات محقونة (في انتظار ستيم)" : "🟡 Injected (Waiting for Steam)");
+                    (isAr ? "ستيم يعمل (محقون بـ GreenLuma)" : "Steam Running (Injected)") : 
+                    (isAr ? "الملفات محقونة (في انتظار ستيم)" : "Injected (Waiting for Steam)");
                 btnLaunch.Visibility = Visibility.Collapsed;
                 btnStop.Visibility = Visibility.Visible;
             }
