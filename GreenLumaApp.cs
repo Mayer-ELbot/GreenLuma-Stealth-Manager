@@ -99,7 +99,7 @@ namespace GreenLumaManager
 
     public class MainWindow : Window
     {
-        public const string CURRENT_VERSION = "v1.3.8";
+        public const string CURRENT_VERSION = "v1.3.9";
         public const string GITHUB_REPO = "Mayer-ELbot/GreenLuma-Stealth-Manager";
 
         [DllImport("user32.dll", SetLastError = true)]
@@ -147,6 +147,7 @@ namespace GreenLumaManager
         private Button btnModeStandard;
         private Button btnModeFamilies;
         private Button btnToggleClearCache;
+        private Button btnRunAppCache;
         private Button btnInjectFiles;
         private Button btnLaunch;
         private Button btnStop;
@@ -940,8 +941,28 @@ namespace GreenLumaManager
                 VerticalAlignment = VerticalAlignment.Center
             };
 
+            btnRunAppCache = new Button() {
+                Content = "🔥 1. مسح كاش ستيم",
+                Background = new SolidColorBrush(Color.FromRgb(217, 119, 6)),
+                Foreground = new SolidColorBrush(Color.FromRgb(255, 255, 255)),
+                FontWeight = FontWeights.Bold,
+                FontSize = 13,
+                Padding = new Thickness(20, 10, 20, 10),
+                Margin = new Thickness(0, 0, 10, 0),
+                BorderThickness = new Thickness(0),
+                Cursor = Cursors.Hand
+            };
+            var cacheGlow = new DropShadowEffect() {
+                Color = Color.FromRgb(245, 158, 11),
+                BlurRadius = 14,
+                ShadowDepth = 0,
+                Opacity = 0.75
+            };
+            btnRunAppCache.Effect = cacheGlow;
+            btnRunAppCache.Click += (s, e) => ExecuteManualDeleteAppCache();
+
             btnInjectFiles = new Button() {
-                Content = "📦 1. تجهيز وحقن الملفات",
+                Content = "📦 2. تجهيز وحقن الملفات",
                 Background = new SolidColorBrush(Color.FromRgb(2, 132, 199)),
                 Foreground = new SolidColorBrush(Color.FromRgb(255, 255, 255)),
                 FontWeight = FontWeights.Bold,
@@ -961,7 +982,7 @@ namespace GreenLumaManager
             btnInjectFiles.Click += (s, e) => InjectFilesOnly();
 
             btnLaunch = new Button() {
-                Content = "🚀 2. تشغيل ستيم",
+                Content = "🚀 3. تشغيل ستيم",
                 Background = new SolidColorBrush(Color.FromRgb(16, 185, 129)),
                 Foreground = new SolidColorBrush(Color.FromRgb(5, 15, 10)),
                 FontWeight = FontWeights.ExtraBold,
@@ -1000,6 +1021,7 @@ namespace GreenLumaManager
             btnStop.Effect = stopGlow;
             btnStop.Click += (s, e) => StopSteamSession();
 
+            tier2Actions.Children.Add(btnRunAppCache);
             tier2Actions.Children.Add(btnInjectFiles);
             tier2Actions.Children.Add(btnLaunch);
             tier2Actions.Children.Add(btnStop);
@@ -1857,9 +1879,18 @@ namespace GreenLumaManager
             UpdateModeButtonStyles();
             UpdateClearCacheButton();
 
+            if (btnRunAppCache != null)
+            {
+                btnRunAppCache.Content = isAr ? "🔥 1. مسح كاش ستيم" : "🔥 1. Clear AppCache";
+                btnRunAppCache.ToolTip = isAr ? "الخطوة الأولى: تشغيل DeleteSteamAppCache.exe ومسح الكاش تماماً" : "Step 1: Execute DeleteSteamAppCache.exe to completely wipe Steam appcache";
+            }
             if (btnInjectFiles != null)
-                btnInjectFiles.Content = isAr ? "📦 1. تجهيز وحقن الملفات" : "📦 1. Inject Files";
-            btnLaunch.Content = isAr ? "🚀 2. تشغيل ستيم" : "🚀 2. Launch Steam";
+            {
+                btnInjectFiles.Content = isAr ? "📦 2. تجهيز وحقن الملفات" : "📦 2. Inject Files";
+                btnInjectFiles.ToolTip = isAr ? "الخطوة الثانية: تجهيز AppList وملف user32.dll داخل ستيم" : "Step 2: Prepare AppList folder and user32.dll in Steam";
+            }
+            btnLaunch.Content = isAr ? "🚀 3. تشغيل ستيم" : "🚀 3. Launch Steam";
+            btnLaunch.ToolTip = isAr ? "الخطوة الثالثة: تشغيل ستيم المحقون بـ GreenLuma" : "Step 3: Launch Steam with GreenLuma active";
             btnStop.Content = isAr ? "🛑 إيقاف وحذف الملفات" : "🛑 Stop & Clean";
 
             btnDeckSettings.Content = isAr ? "⚙️ الإعدادات" : "⚙️ Settings";
@@ -2560,8 +2591,15 @@ namespace GreenLumaManager
         // =========================================================================
         // --- LAUNCH & INJECTION ENGINE ---
         // =========================================================================
-        private void RunDeleteSteamAppCacheTool()
+        private void ExecuteManualDeleteAppCache()
         {
+            RunDeleteSteamAppCacheTool(true);
+        }
+
+        private bool RunDeleteSteamAppCacheTool(bool isManual = false)
+        {
+            bool isAr = (settings.lang == "ar");
+
             if (IsSteamRunning())
             {
                 StopSteamProcess();
@@ -2589,6 +2627,7 @@ namespace GreenLumaManager
                 catch { }
             }
 
+            bool launched = false;
             if (File.Exists(delExe))
             {
                 try
@@ -2600,26 +2639,42 @@ namespace GreenLumaManager
                     var proc = Process.Start(psi);
                     if (proc != null)
                     {
-                        var autoDismiss = new Thread(() => {
-                            for (int i = 0; i < 30; i++)
-                            {
-                                if (proc.HasExited) break;
-                                Thread.Sleep(150);
-                                IntPtr hWnd = FindWindow(null, "DeleteSteamAppCache");
-                                if (hWnd != IntPtr.Zero)
+                        launched = true;
+                        if (!isManual)
+                        {
+                            var autoDismiss = new Thread(() => {
+                                for (int i = 0; i < 30; i++)
                                 {
-                                    Thread.Sleep(1200);
-                                    SendMessage(hWnd, 0x0010 /* WM_CLOSE */, IntPtr.Zero, IntPtr.Zero);
-                                    break;
+                                    if (proc.HasExited) break;
+                                    Thread.Sleep(150);
+                                    IntPtr hWnd = FindWindow(null, "DeleteSteamAppCache");
+                                    if (hWnd != IntPtr.Zero)
+                                    {
+                                        Thread.Sleep(1200);
+                                        SendMessage(hWnd, 0x0010 /* WM_CLOSE */, IntPtr.Zero, IntPtr.Zero);
+                                        break;
+                                    }
                                 }
-                            }
-                        }) { IsBackground = true };
-                        autoDismiss.Start();
-
-                        proc.WaitForExit(3500);
+                            }) { IsBackground = true };
+                            autoDismiss.Start();
+                            proc.WaitForExit(3500);
+                        }
+                        else
+                        {
+                            proc.WaitForExit(15000);
+                        }
                     }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    if (isManual)
+                    {
+                        MessageBox.Show(
+                            isAr ? ("تعذر تشغيل DeleteSteamAppCache.exe: " + ex.Message) : ("Failed to run DeleteSteamAppCache.exe: " + ex.Message),
+                            isAr ? "خطأ" : "Error",
+                            MessageBoxButton.OK, MessageBoxImage.Error);
+                    }
+                }
             }
 
             if (!string.IsNullOrEmpty(steamDir))
@@ -2630,6 +2685,17 @@ namespace GreenLumaManager
                 try { if (File.Exists(pkgInfo)) File.Delete(pkgInfo); } catch { }
                 try { if (File.Exists(appInfo)) File.Delete(appInfo); } catch { }
             }
+
+            if (isManual)
+            {
+                MessageBox.Show(
+                    isAr ? "✅ تم تشغيل أداة DeleteSteamAppCache.exe ومسح كاش ستيم بنجاح!\n\nيمكنك الآن الانتقال إلى الخطوة التالية: '📦 2. تجهيز وحقن الملفات'." :
+                           "✅ Steam app cache cleared successfully via DeleteSteamAppCache.exe!\n\nYou can now proceed to Step 2: '📦 2. Inject Files'.",
+                    isAr ? "اكتمل مسح الكاش" : "AppCache Cleared",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+
+            return launched;
         }
 
         private bool CheckIfSteamFamiliesEnrolled()
@@ -2675,7 +2741,7 @@ namespace GreenLumaManager
             // 2. تشغيل أداة DeleteSteamAppCache.exe
             if (settings.clearAppCache)
             {
-                RunDeleteSteamAppCacheTool();
+                RunDeleteSteamAppCacheTool(false);
                 Thread.Sleep(300);
             }
 
