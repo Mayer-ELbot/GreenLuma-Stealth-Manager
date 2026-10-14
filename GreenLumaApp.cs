@@ -99,7 +99,7 @@ namespace GreenLumaManager
 
     public class MainWindow : Window
     {
-        public const string CURRENT_VERSION = "v1.4.0";
+        public const string CURRENT_VERSION = "v1.4.1";
         public const string GITHUB_REPO = "Mayer-ELbot/GreenLuma-Stealth-Manager";
 
         [DllImport("user32.dll", SetLastError = true)]
@@ -2609,13 +2609,13 @@ namespace GreenLumaManager
                 Thread.Sleep(500);
             }
 
-            string delExe = Path.Combine(appDir, "StealthMode", "DeleteSteamAppCache.exe");
-            if (!File.Exists(delExe))
-                delExe = @"e:\Wooork\greenluma\StealthMode\DeleteSteamAppCache.exe";
-            if (!File.Exists(delExe))
-                delExe = Path.Combine(appDir, "DeleteSteamAppCache.exe");
+            // Target DeleteSteamAppCache.exe in steamDir first, fallback to StealthMode
+            string steamDelExe = !string.IsNullOrEmpty(steamDir) ? Path.Combine(steamDir, "DeleteSteamAppCache.exe") : null;
+            string localDelExe = Path.Combine(appDir, "StealthMode", "DeleteSteamAppCache.exe");
+            if (!File.Exists(localDelExe))
+                localDelExe = Path.Combine(appDir, "DeleteSteamAppCache.exe");
 
-            if (!File.Exists(delExe))
+            if (!File.Exists(localDelExe))
             {
                 try
                 {
@@ -2623,49 +2623,36 @@ namespace GreenLumaManager
                     byte[] bytes = GetPayloadBytes("DeleteSteamAppCache.exe", out srcDesc);
                     if (bytes != null && bytes.Length > 0)
                     {
-                        delExe = Path.Combine(appDir, "DeleteSteamAppCache.exe");
-                        File.WriteAllBytes(delExe, bytes);
+                        localDelExe = Path.Combine(appDir, "DeleteSteamAppCache.exe");
+                        File.WriteAllBytes(localDelExe, bytes);
                     }
                 }
                 catch { }
             }
 
+            // Ensure DeleteSteamAppCache.exe exists in steamDir
+            if (!string.IsNullOrEmpty(steamDelExe) && !File.Exists(steamDelExe) && File.Exists(localDelExe))
+            {
+                try { File.Copy(localDelExe, steamDelExe, true); } catch { }
+            }
+
+            string targetExe = (steamDelExe != null && File.Exists(steamDelExe)) ? steamDelExe : localDelExe;
+
             bool launched = false;
-            if (File.Exists(delExe))
+            if (File.Exists(targetExe))
             {
                 try
                 {
-                    var psi = new ProcessStartInfo(delExe) {
-                        WorkingDirectory = Path.GetDirectoryName(delExe),
+                    var psi = new ProcessStartInfo(targetExe) {
+                        WorkingDirectory = Path.GetDirectoryName(targetExe),
                         UseShellExecute = true
                     };
                     var proc = Process.Start(psi);
                     if (proc != null)
                     {
                         launched = true;
-                        if (!isManual)
-                        {
-                            var autoDismiss = new Thread(() => {
-                                for (int i = 0; i < 30; i++)
-                                {
-                                    if (proc.HasExited) break;
-                                    Thread.Sleep(150);
-                                    IntPtr hWnd = FindWindow(null, "DeleteSteamAppCache");
-                                    if (hWnd != IntPtr.Zero)
-                                    {
-                                        Thread.Sleep(1200);
-                                        SendMessage(hWnd, 0x0010 /* WM_CLOSE */, IntPtr.Zero, IntPtr.Zero);
-                                        break;
-                                    }
-                                }
-                            }) { IsBackground = true };
-                            autoDismiss.Start();
-                            proc.WaitForExit(3500);
-                        }
-                        else
-                        {
-                            proc.WaitForExit(15000);
-                        }
+                        // Execute the literal DeleteSteamAppCache.exe binary naturally
+                        proc.WaitForExit();
                     }
                 }
                 catch (Exception ex)
@@ -2680,20 +2667,11 @@ namespace GreenLumaManager
                 }
             }
 
-            if (!string.IsNullOrEmpty(steamDir))
-            {
-                string cacheDir = Path.Combine(steamDir, "appcache");
-                string pkgInfo = Path.Combine(cacheDir, "packageinfo.vdf");
-                string appInfo = Path.Combine(cacheDir, "appinfo.vdf");
-                try { if (File.Exists(pkgInfo)) File.Delete(pkgInfo); } catch { }
-                try { if (File.Exists(appInfo)) File.Delete(appInfo); } catch { }
-            }
-
-            if (isManual)
+            if (isManual && launched)
             {
                 MessageBox.Show(
-                    isAr ? "✅ تم تشغيل أداة DeleteSteamAppCache.exe ومسح كاش ستيم بنجاح!\n\nيمكنك الآن الانتقال إلى الخطوة التالية: '📦 2. تجهيز وحقن الملفات'." :
-                           "✅ Steam app cache cleared successfully via DeleteSteamAppCache.exe!\n\nYou can now proceed to Step 2: '📦 2. Inject Files'.",
+                    isAr ? "✅ تم تشغيل أداة DeleteSteamAppCache.exe الأصلية ومسح الكاش بنجاح!\n\nيمكنك الآن الانتقال إلى الخطوة التالية: '📦 2. تجهيز وحقن الملفات'." :
+                           "✅ DeleteSteamAppCache.exe executed and Steam cache cleared successfully!\n\nYou can now proceed to Step 2: '📦 2. Inject Files'.",
                     isAr ? "اكتمل مسح الكاش" : "AppCache Cleared",
                     MessageBoxButton.OK, MessageBoxImage.Information);
             }
@@ -3518,11 +3496,20 @@ namespace GreenLumaManager
 
         private void SyncAppListIni()
         {
-            var enabledIds = new List<int>();
+            var games = new List<int>();
+            var dlcs = new List<int>();
             foreach (var g in gamesList)
             {
-                if (g.enabled) enabledIds.Add(g.appId);
+                if (g.enabled)
+                {
+                    if (g.CheckIsDLC()) dlcs.Add(g.appId);
+                    else games.Add(g.appId);
+                }
             }
+
+            var enabledIds = new List<int>();
+            enabledIds.AddRange(games);
+            enabledIds.AddRange(dlcs);
 
             var sb = new StringBuilder();
             sb.AppendLine("[AppList]");
@@ -3569,33 +3556,29 @@ namespace GreenLumaManager
                 }
 
                 File.WriteAllText(Path.Combine(localAppListDir, "AppList.ini"), content, Encoding.UTF8);
-
-                for (int i = 0; i < enabledIds.Count; i++)
-                {
-                    File.WriteAllText(Path.Combine(localAppListDir, i + ".txt"), enabledIds[i].ToString());
-                }
             }
             catch { }
 
             if (!string.IsNullOrEmpty(steamDir))
             {
                 string steamAppListDir = Path.Combine(steamDir, "AppList");
-                if (Directory.Exists(steamAppListDir))
+                try
                 {
-                    try
+                    if (!Directory.Exists(steamAppListDir))
+                    {
+                        Directory.CreateDirectory(steamAppListDir);
+                    }
+                    else
                     {
                         foreach (var f in Directory.GetFiles(steamAppListDir, "*.txt"))
                         {
                             try { File.Delete(f); } catch { }
                         }
-                        File.WriteAllText(Path.Combine(steamAppListDir, "AppList.ini"), content, Encoding.UTF8);
-                        for (int i = 0; i < enabledIds.Count; i++)
-                        {
-                            File.WriteAllText(Path.Combine(steamAppListDir, i + ".txt"), enabledIds[i].ToString());
-                        }
                     }
-                    catch { }
+
+                    File.WriteAllText(Path.Combine(steamAppListDir, "AppList.ini"), content, Encoding.UTF8);
                 }
+                catch { }
             }
         }
 
