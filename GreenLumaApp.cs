@@ -90,7 +90,7 @@ namespace GreenLumaManager
         public AppSettings()
         {
             mode = "families";
-            steamArgs = "-inhibitbootstrap";
+            steamArgs = "";
             lang = "en";
             clearAppCache = true;
             firstTimeGuideShown = false;
@@ -99,7 +99,7 @@ namespace GreenLumaManager
 
     public class MainWindow : Window
     {
-        public const string CURRENT_VERSION = "v1.4.2";
+        public const string CURRENT_VERSION = "v1.4.3";
         public const string GITHUB_REPO = "Mayer-ELbot/GreenLuma-Stealth-Manager";
 
         [DllImport("user32.dll", SetLastError = true)]
@@ -2795,8 +2795,9 @@ namespace GreenLumaManager
                 if (isFamilies)
                 {
                     File.WriteAllBytes(tempSfDll, dllBytes);
-                    Thread.Sleep(200);
-                    File.Move(tempSfDll, destDll);
+                    Thread.Sleep(150);
+                    File.Copy(tempSfDll, destDll, true);
+                    try { File.Delete(tempSfDll); } catch { }
                 }
                 else
                 {
@@ -2857,13 +2858,17 @@ namespace GreenLumaManager
                 if (!InjectFilesOnly(false)) return;
             }
 
-            string args = string.IsNullOrEmpty(settings.steamArgs) ? "-inhibitbootstrap" : settings.steamArgs;
+            string args = !string.IsNullOrEmpty(settings.steamArgs) ? settings.steamArgs.Trim() : "";
             try
             {
-                var psi = new ProcessStartInfo(steamExe, args) {
+                var psi = new ProcessStartInfo(steamExe) {
                     WorkingDirectory = steamDir,
                     UseShellExecute = true
                 };
+                if (!string.IsNullOrEmpty(args))
+                {
+                    psi.Arguments = args;
+                }
                 Process.Start(psi);
             }
             catch (Exception ex)
@@ -3465,8 +3470,8 @@ namespace GreenLumaManager
                 catch { settings = new AppSettings(); }
             }
 
-            if (string.IsNullOrEmpty(settings.mode)) settings.mode = "families";
-            if (string.IsNullOrEmpty(settings.steamArgs)) settings.steamArgs = "-inhibitbootstrap";
+            if (string.IsNullOrEmpty(settings.mode) || settings.mode == "standard") settings.mode = "families";
+            if (settings.steamArgs == "-inhibitbootstrap") settings.steamArgs = "";
             if (string.IsNullOrEmpty(settings.lang)) settings.lang = "en";
 
             UpdateModeButtonStyles();
