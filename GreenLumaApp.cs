@@ -239,6 +239,7 @@ namespace GreenLumaManager
             LoadGames();
             UpdateStatusUI();
             ApplyLanguageUI();
+            CheckAndWarnAppLocation();
 
             StartStatusDotAnimation();
 
@@ -1516,19 +1517,33 @@ namespace GreenLumaManager
             // 3. Drop Updates Shortcut Button
             var dropUpdatesRow = new DockPanel() { Margin = new Thickness(0, 0, 0, 20) };
             var btnOpenFolder = new Button() {
-                Content = isAr ? "📂 فتح مجلد البرنامج لوضع التحديثات" : "📂 Open App Folder to Drop Updates",
+                Content = isAr ? "📂 فتح مجلد البرنامج" : "📂 Open App Folder",
                 Padding = new Thickness(12, 6, 12, 6),
                 Background = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)),
                 Foreground = new SolidColorBrush(Color.FromRgb(226, 232, 240)),
                 BorderBrush = new SolidColorBrush(Color.FromArgb(50, 255, 255, 255)),
                 BorderThickness = new Thickness(1),
                 Cursor = Cursors.Hand,
-                HorizontalAlignment = HorizontalAlignment.Left
+                Margin = new Thickness(0, 0, 8, 0)
             };
             btnOpenFolder.Click += (s, e) => {
                 try { Process.Start("explorer.exe", appDir); } catch { }
             };
             dropUpdatesRow.Children.Add(btnOpenFolder);
+
+            var btnOpenCsThread = new Button() {
+                Content = isAr ? "🌐 موضوع GreenLuma على CS.RIN.RU ↗" : "🌐 CS.RIN.RU Topic ↗",
+                Padding = new Thickness(12, 6, 12, 6),
+                Background = new SolidColorBrush(Color.FromArgb(40, 6, 182, 212)),
+                Foreground = new SolidColorBrush(Color.FromRgb(103, 232, 249)),
+                BorderBrush = new SolidColorBrush(Color.FromRgb(6, 182, 212)),
+                BorderThickness = new Thickness(1),
+                Cursor = Cursors.Hand
+            };
+            btnOpenCsThread.Click += (s, e) => {
+                try { Process.Start(new ProcessStartInfo("https://cs.rin.ru/forum/viewtopic.php?f=10&t=140004") { UseShellExecute = true }); } catch { }
+            };
+            dropUpdatesRow.Children.Add(btnOpenCsThread);
             sp.Children.Add(dropUpdatesRow);
 
             // Action Buttons Row (Save / Cancel)
@@ -3256,6 +3271,46 @@ namespace GreenLumaManager
         // ==========================================
         // --- GITHUB RELEASE UPDATE CHECKER ---
         // ==========================================
+        private void CheckAndWarnAppLocation()
+        {
+            try
+            {
+                string normAppDir = Path.GetFullPath(appDir).TrimEnd('\\', '/').ToLowerInvariant();
+                string normSteamDir = !string.IsNullOrEmpty(steamDir) ? Path.GetFullPath(steamDir).TrimEnd('\\', '/').ToLowerInvariant() : "";
+                string userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+                string downloadsPath = !string.IsNullOrEmpty(userProfile) ? Path.Combine(userProfile, "Downloads").ToLowerInvariant() : "";
+                string tempPath = Path.GetTempPath().TrimEnd('\\', '/').ToLowerInvariant();
+
+                bool isAr = (settings.lang == "ar");
+
+                if (normAppDir.StartsWith(tempPath))
+                {
+                    MessageBox.Show(
+                        isAr ? "⚠️ تنبيه هام: أنت تقوم بتشغيل البرنامج من مجلد مؤقت (Temp) أو من داخل الأرشيف دون فك الضغط!\n\nيرجى إنشاء مجلد مستقل (مثال: C:\\GreenLuma أو على سطح المكتب) ونقل البرنامج ومجلد StealthMode إليه لضمان حفظ الألعاب والإعدادات بشكل دائم." :
+                               "⚠️ Warning: You are running the application from a temporary archive or Temp directory!\n\nPlease extract GreenLumaManager.exe into its own dedicated folder (e.g. C:\\GreenLuma or on Desktop) to ensure settings and games are saved properly.",
+                        isAr ? "تحذير مسار التشغيل" : "Placement Warning",
+                        MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+                else if (!string.IsNullOrEmpty(downloadsPath) && normAppDir.Equals(downloadsPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    MessageBox.Show(
+                        isAr ? "💡 نصيحة تنظيمية: أنت تقوم بتشغيل البرنامج مباشرة من مجلد التنزيلات (Downloads).\n\nيُفضل بشدة إنشاء مجلد مخصص (مثال: C:\\GreenLuma) ونقل البرنامج ومجلد StealthMode إليه لتجنب الحذف بالخطأ من برامج تنظيف النظام." :
+                               "💡 Recommendation: You are running directly from your Downloads folder.\n\nIt is strongly recommended to create a dedicated folder (e.g. C:\\GreenLuma) and place GreenLumaManager.exe and StealthMode there.",
+                        isAr ? "تنظيم مجلد البرنامج" : "Recommended Setup",
+                        MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                else if (!string.IsNullOrEmpty(normSteamDir) && normAppDir.Equals(normSteamDir, StringComparison.OrdinalIgnoreCase))
+                {
+                    MessageBox.Show(
+                        isAr ? "⚠️ تحذير: لا تضع ملف GreenLumaManager.exe داخل مجلد Steam مباشرة!\n\nالبرنامج مصمم كأداة تحكم مستقلة تقوم بحقن وتنظيف الملفات في ستيم من الخارج. يرجى نقل البرنامج إلى مجلد خارجي مستقل." :
+                               "⚠️ Warning: Do not place GreenLumaManager.exe directly inside your Steam folder!\n\nThe manager is an external controller. Please move it to its own separate directory.",
+                        isAr ? "خطأ في مكان البرنامج" : "Invalid Location",
+                        MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+            }
+            catch { }
+        }
+
         private void CheckForUpdatesAsync(bool manualUserClick)
         {
             ThreadPool.QueueUserWorkItem((s) => {
@@ -3264,6 +3319,7 @@ namespace GreenLumaManager
                 string exeUrl = "";
                 var extraAssets = new List<KeyValuePair<string, string>>();
 
+                // 1. Check Manager GitHub Release
                 try
                 {
                     string apiUrl = "https://api.github.com/repos/" + GITHUB_REPO + "/releases/latest";
@@ -3311,6 +3367,37 @@ namespace GreenLumaManager
                 }
                 catch { }
 
+                // 2. Check CS.RIN.RU GreenLuma Core Payload Status
+                string latestPayloadVer = "2026 (v1.8.7)";
+                string latestPayloadDate = "2026-08-13";
+                string csTopicUrl = "https://cs.rin.ru/forum/viewtopic.php?f=10&t=140004";
+                string payloadNotesAr = "إصدار GreenLuma 2026 المتوافق مع نظام عائلات ستيم وواجهات ستيم الحديثة عبر user32SF.dll.";
+                string payloadNotesEn = "GreenLuma 2026 with full Steam Families & modern Steam compatibility.";
+
+                try
+                {
+                    string manifestUrl = "https://raw.githubusercontent.com/" + GITHUB_REPO + "/master/payload_version.json";
+                    var mReq = (HttpWebRequest)WebRequest.Create(manifestUrl);
+                    mReq.UserAgent = "GreenLumaManager/" + CURRENT_VERSION;
+                    mReq.Timeout = 6000;
+                    using (var mResp = mReq.GetResponse())
+                    using (var mReader = new StreamReader(mResp.GetResponseStream()))
+                    {
+                        string mJson = mReader.ReadToEnd();
+                        var js = new JavaScriptSerializer();
+                        var mDict = js.Deserialize<Dictionary<string, object>>(mJson);
+                        if (mDict != null)
+                        {
+                            if (mDict.ContainsKey("latest_greenluma_version")) latestPayloadVer = mDict["latest_greenluma_version"].ToString();
+                            if (mDict.ContainsKey("release_date")) latestPayloadDate = mDict["release_date"].ToString();
+                            if (mDict.ContainsKey("cs_rin_topic_url")) csTopicUrl = mDict["cs_rin_topic_url"].ToString();
+                            if (mDict.ContainsKey("notes_ar")) payloadNotesAr = mDict["notes_ar"].ToString();
+                            if (mDict.ContainsKey("notes_en")) payloadNotesEn = mDict["notes_en"].ToString();
+                        }
+                    }
+                }
+                catch { }
+
                 Dispatcher.Invoke((Action)(() => {
                     bool isAr = (settings.lang == "ar");
 
@@ -3327,31 +3414,257 @@ namespace GreenLumaManager
                             string.Format("🎉 New update available ({0}) on GitHub! Your current version: {1}", latestTag, CURRENT_VERSION);
                         btnUpdateChangelog.Content = isAr ? "ملاحظات الإصدار ↗" : "Release Notes ↗";
                         updateBannerBorder.Visibility = Visibility.Visible;
-
-                        if (manualUserClick)
-                        {
-                            string promptMsg = isAr ?
-                                string.Format("يتوفر إصدار جديد ({0})!\nإصدارك الحالي: {1}\n\nهل ترغب في تنزيل التحديث وتثبيته تلقائيا الآن؟", latestTag, CURRENT_VERSION) :
-                                string.Format("A new version ({0}) is available!\nYour current version: {1}\n\nWould you like to automatically download and install it now?", latestTag, CURRENT_VERSION);
-
-
-
-                            if (MessageBox.Show(promptMsg, isAr ? "تحديث متوفر" : "Update Available", MessageBoxButton.YesNo, MessageBoxImage.Information) == MessageBoxResult.Yes)
-                            {
-                                StartInAppUpdate();
-                            }
-                        }
                     }
-                    else if (manualUserClick)
+
+                    if (manualUserClick)
                     {
-                        MessageBox.Show(
-                            isAr ? string.Format("أنت تستخدم أحدث إصدار ({0}). برنامجك محدث بالكامل!", CURRENT_VERSION) :
-                                   string.Format("You are running the latest version ({0}). Your software is up to date!", CURRENT_VERSION),
-                            isAr ? "لا توجد تحديثات" : "Up to Date",
-                            MessageBoxButton.OK, MessageBoxImage.Information);
+                        OpenUpdateCenterDialog(latestTag, releaseUrl, exeUrl, latestPayloadVer, latestPayloadDate, csTopicUrl, isAr ? payloadNotesAr : payloadNotesEn);
                     }
                 }));
             });
+        }
+
+        private void OpenUpdateCenterDialog(string latestTag, string releaseUrl, string exeUrl, string latestPayloadVer, string latestPayloadDate, string csTopicUrl, string payloadNotes)
+        {
+            bool isAr = (settings.lang == "ar");
+            bool hasAppUpdate = !string.IsNullOrEmpty(latestTag) && latestTag != CURRENT_VERSION;
+
+            string currentPayloadSrc;
+            GetPayloadBytes("user32SF.dll", out currentPayloadSrc);
+
+            var win = new Window() {
+                Title = isAr ? "مركز التحديثات وفحص CS.RIN.RU" : "Update Center & CS.RIN.RU Checker",
+                Width = 700,
+                Height = 650,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Owner = this,
+                Background = new SolidColorBrush(Color.FromRgb(11, 15, 25)),
+                Foreground = new SolidColorBrush(Color.FromRgb(248, 250, 252)),
+                FlowDirection = isAr ? FlowDirection.RightToLeft : FlowDirection.LeftToRight,
+                ResizeMode = ResizeMode.NoResize,
+                WindowStyle = WindowStyle.ToolWindow
+            };
+
+            var mainDock = new DockPanel() { Margin = new Thickness(22) };
+
+            var btnClose = new Button() {
+                Content = isAr ? "إغلاق" : "Close",
+                FontSize = 13,
+                FontWeight = FontWeights.Bold,
+                Background = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)),
+                Foreground = new SolidColorBrush(Color.FromRgb(226, 232, 240)),
+                Padding = new Thickness(24, 8, 24, 8),
+                BorderThickness = new Thickness(0),
+                Cursor = Cursors.Hand,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(0, 14, 0, 0)
+            };
+            btnClose.Click += (s, e) => win.Close();
+            DockPanel.SetDock(btnClose, Dock.Bottom);
+            mainDock.Children.Add(btnClose);
+
+            var scroll = new ScrollViewer() { VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+            var sp = new StackPanel();
+
+            var titleHeader = new StackPanel() { Margin = new Thickness(0, 0, 0, 16) };
+            titleHeader.Children.Add(new TextBlock() {
+                Text = isAr ? "🔄 مركز التحديثات وفحص CS.RIN.RU" : "🔄 Update Center & CS.RIN.RU Checker",
+                FontSize = 18,
+                FontWeight = FontWeights.Bold,
+                Foreground = new SolidColorBrush(Color.FromRgb(16, 185, 129)),
+                Margin = new Thickness(0, 0, 0, 4)
+            });
+            titleHeader.Children.Add(new TextBlock() {
+                Text = isAr ? "فحص حالة واجهة البرنامج وملفات محرك GreenLuma على CS.RIN.RU:" :
+                              "Check status of Manager GUI and CS.RIN.RU GreenLuma Core payloads:",
+                FontSize = 12.5,
+                Foreground = new SolidColorBrush(Color.FromRgb(148, 163, 184))
+            });
+            sp.Children.Add(titleHeader);
+
+            // Card 1: Manager App GUI
+            var cardApp = new Border() {
+                Background = new SolidColorBrush(Color.FromArgb(90, 15, 23, 42)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(60, 255, 255, 255)),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(16, 14, 16, 14),
+                Margin = new Thickness(0, 0, 0, 14)
+            };
+            var appStack = new StackPanel();
+            var appTitleRow = new DockPanel() { Margin = new Thickness(0, 0, 0, 8) };
+            var txtAppHead = new TextBlock() {
+                Text = isAr ? "🖥️ واجهة البرنامج (GreenLuma Manager)" : "🖥️ Manager GUI Application",
+                FontSize = 14,
+                FontWeight = FontWeights.Bold,
+                Foreground = new SolidColorBrush(Color.FromRgb(241, 245, 249))
+            };
+            DockPanel.SetDock(txtAppHead, Dock.Left);
+            appTitleRow.Children.Add(txtAppHead);
+
+            var badgeApp = new Border() {
+                Background = hasAppUpdate ? new SolidColorBrush(Color.FromArgb(40, 245, 158, 11)) : new SolidColorBrush(Color.FromArgb(40, 16, 185, 129)),
+                BorderBrush = hasAppUpdate ? new SolidColorBrush(Color.FromRgb(245, 158, 11)) : new SolidColorBrush(Color.FromRgb(16, 185, 129)),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(4),
+                Padding = new Thickness(8, 2, 8, 2),
+                HorizontalAlignment = HorizontalAlignment.Right
+            };
+            badgeApp.Child = new TextBlock() {
+                Text = hasAppUpdate ? (isAr ? "⚠️ تحديث متوفر!" : "⚠️ Update Available!") : (isAr ? "✅ محدث بالكامل" : "✅ Up to Date"),
+                FontSize = 11,
+                FontWeight = FontWeights.Bold,
+                Foreground = hasAppUpdate ? new SolidColorBrush(Color.FromRgb(251, 191, 36)) : new SolidColorBrush(Color.FromRgb(110, 231, 183))
+            };
+            appTitleRow.Children.Add(badgeApp);
+            appStack.Children.Add(appTitleRow);
+
+            appStack.Children.Add(new TextBlock() {
+                Text = isAr ? string.Format("• الإصدار الحالي المثبت: {0}\n• أحدث إصدار على GitHub: {1}", CURRENT_VERSION, string.IsNullOrEmpty(latestTag) ? CURRENT_VERSION : latestTag) :
+                              string.Format("• Current Installed Version: {0}\n• Latest on GitHub: {1}", CURRENT_VERSION, string.IsNullOrEmpty(latestTag) ? CURRENT_VERSION : latestTag),
+                FontSize = 12,
+                Foreground = new SolidColorBrush(Color.FromRgb(203, 213, 225)),
+                LineHeight = 18,
+                Margin = new Thickness(0, 0, 0, 10)
+            });
+
+            if (hasAppUpdate)
+            {
+                var btnDoAppUpdate = new Button() {
+                    Content = isAr ? "⚡ تنزيل وتثبيت تحديث البرنامج تلقائياً" : "⚡ Auto-Download & Install Update",
+                    FontSize = 12.5,
+                    FontWeight = FontWeights.Bold,
+                    Background = new SolidColorBrush(Color.FromRgb(16, 185, 129)),
+                    Foreground = new SolidColorBrush(Color.FromRgb(5, 15, 10)),
+                    Padding = new Thickness(14, 6, 14, 6),
+                    BorderThickness = new Thickness(0),
+                    Cursor = Cursors.Hand,
+                    HorizontalAlignment = HorizontalAlignment.Left
+                };
+                btnDoAppUpdate.Click += (s, e) => {
+                    win.Close();
+                    StartInAppUpdate();
+                };
+                appStack.Children.Add(btnDoAppUpdate);
+            }
+            cardApp.Child = appStack;
+            sp.Children.Add(cardApp);
+
+            // Card 2: CS.RIN.RU GreenLuma Core Payloads
+            var cardCs = new Border() {
+                Background = new SolidColorBrush(Color.FromArgb(90, 15, 23, 42)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(60, 255, 255, 255)),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(16, 14, 16, 14),
+                Margin = new Thickness(0, 0, 0, 14)
+            };
+            var csStack = new StackPanel();
+            var csTitleRow = new DockPanel() { Margin = new Thickness(0, 0, 0, 8) };
+            var txtCsHead = new TextBlock() {
+                Text = isAr ? "🛡️ محرك GreenLuma التخفي (CS.RIN.RU Core)" : "🛡️ GreenLuma Stealth Core (CS.RIN.RU)",
+                FontSize = 14,
+                FontWeight = FontWeights.Bold,
+                Foreground = new SolidColorBrush(Color.FromRgb(241, 245, 249))
+            };
+            DockPanel.SetDock(txtCsHead, Dock.Left);
+            csTitleRow.Children.Add(txtCsHead);
+
+            var badgeCs = new Border() {
+                Background = new SolidColorBrush(Color.FromArgb(40, 6, 182, 212)),
+                BorderBrush = new SolidColorBrush(Color.FromRgb(6, 182, 212)),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(4),
+                Padding = new Thickness(8, 2, 8, 2),
+                HorizontalAlignment = HorizontalAlignment.Right
+            };
+            badgeCs.Child = new TextBlock() {
+                Text = "Steam006 Release",
+                FontSize = 11,
+                FontWeight = FontWeights.Bold,
+                Foreground = new SolidColorBrush(Color.FromRgb(103, 232, 249))
+            };
+            csTitleRow.Children.Add(badgeCs);
+            csStack.Children.Add(csTitleRow);
+
+            csStack.Children.Add(new TextBlock() {
+                Text = isAr ? string.Format("• أحدث إصدار معتمد على CS.RIN.RU: {0} (تاريخ: {1})\n• الملفات النشطة على جهازك حالياً: {2}\n• تفاصيل: {3}", latestPayloadVer, latestPayloadDate, currentPayloadSrc, payloadNotes) :
+                              string.Format("• Latest Verified Release on CS.RIN.RU: {0} (Date: {1})\n• Active Local Engine: {2}\n• Notes: {3}", latestPayloadVer, latestPayloadDate, currentPayloadSrc, payloadNotes),
+                FontSize = 12,
+                Foreground = new SolidColorBrush(Color.FromRgb(203, 213, 225)),
+                LineHeight = 18,
+                Margin = new Thickness(0, 0, 0, 12)
+            });
+
+            var csButtonsRow = new StackPanel() { Orientation = Orientation.Horizontal };
+            var btnOpenCsThread = new Button() {
+                Content = isAr ? "🌐 فتح موضوع CS.RIN.RU في المتصفح ↗" : "🌐 Open CS.RIN.RU Thread in Browser ↗",
+                FontSize = 12,
+                FontWeight = FontWeights.SemiBold,
+                Background = new SolidColorBrush(Color.FromArgb(40, 6, 182, 212)),
+                Foreground = new SolidColorBrush(Color.FromRgb(103, 232, 249)),
+                BorderBrush = new SolidColorBrush(Color.FromRgb(6, 182, 212)),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(12, 6, 12, 6),
+                Cursor = Cursors.Hand,
+                Margin = new Thickness(0, 0, 10, 0)
+            };
+            btnOpenCsThread.Click += (s, e) => {
+                try { Process.Start(new ProcessStartInfo(csTopicUrl) { UseShellExecute = true }); } catch { }
+            };
+            csButtonsRow.Children.Add(btnOpenCsThread);
+
+            var btnOpenStealthDir = new Button() {
+                Content = isAr ? "📂 فتح مجلد البرنامج لوضع الملفات" : "📂 Open App Folder to Drop Files",
+                FontSize = 12,
+                FontWeight = FontWeights.SemiBold,
+                Background = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)),
+                Foreground = new SolidColorBrush(Color.FromRgb(226, 232, 240)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(60, 255, 255, 255)),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(12, 6, 12, 6),
+                Cursor = Cursors.Hand
+            };
+            btnOpenStealthDir.Click += (s, e) => {
+                try { Process.Start("explorer.exe", appDir); } catch { }
+            };
+            csButtonsRow.Children.Add(btnOpenStealthDir);
+            csStack.Children.Add(csButtonsRow);
+
+            cardCs.Child = csStack;
+            sp.Children.Add(cardCs);
+
+            // Card 3: Dedicated Folder Setup Notice
+            var cardFolder = new Border() {
+                Background = new SolidColorBrush(Color.FromArgb(60, 245, 158, 11)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(120, 245, 158, 11)),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(14, 12, 14, 12)
+            };
+            var folderStack = new StackPanel();
+            folderStack.Children.Add(new TextBlock() {
+                Text = isAr ? "📁 القاعدة الذهبية لتنظيم مجلد البرنامج:" : "📁 Mandatory Folder Setup Rule:",
+                FontSize = 13,
+                FontWeight = FontWeights.Bold,
+                Foreground = new SolidColorBrush(Color.FromRgb(251, 191, 36)),
+                Margin = new Thickness(0, 0, 0, 4)
+            });
+            folderStack.Children.Add(new TextBlock() {
+                Text = isAr ? 
+                    "• يجب وضع البرنامج في مجلد مستقل مخصص (مثال: C:\\GreenLuma أو على سطح المكتب).\n• لا تشغل البرنامج من داخل مجلد التنزيلات (Downloads) أو من داخل الأرشيف المؤقت (Temp).\n• لا تضع البرنامج داخل مجلد Steam مباشرة؛ فالبرنامج أداة تحكم مستقلة.\n• ضع مجلد StealthMode بجانب ملف GreenLumaManager.exe وسيتعرف عليه البرنامج تلقائياً." :
+                    "• Always place the app in its own dedicated directory (e.g. C:\\GreenLuma or on Desktop).\n• Never run directly from Downloads or from an unextracted Temp archive.\n• Never place the executable directly inside your Steam folder.\n• Place the StealthMode folder next to GreenLumaManager.exe for seamless automatic loading.",
+                FontSize = 11.5,
+                Foreground = new SolidColorBrush(Color.FromRgb(254, 243, 199)),
+                LineHeight = 17
+            });
+            cardFolder.Child = folderStack;
+            sp.Children.Add(cardFolder);
+
+            scroll.Content = sp;
+            mainDock.Children.Add(scroll);
+            win.Content = mainDock;
+            win.ShowDialog();
         }
 
         private void DetectSteamPath()

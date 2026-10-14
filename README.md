@@ -101,13 +101,21 @@ If you have ever used GreenLuma manually, you know the friction involved:
 
 ## 🚀 Quick Start Guide
 
+> [!WARNING]
+> ### 📁 Mandatory Setup Rule: Create a Dedicated Folder!
+> **Do NOT run `GreenLumaManager.exe` directly from your `Downloads` folder, from inside an unextracted zip/rar archive, or inside your `Steam` directory!**  
+> 1. Create a dedicated folder (e.g. `C:\GreenLuma` or a folder on your Desktop).  
+> 2. Place `GreenLumaManager.exe` inside it.  
+> 3. Keep the `StealthMode/` folder beside `GreenLumaManager.exe`.
+
 1. Download **`GreenLumaManager.exe`** from the [GitHub Releases](https://github.com/Mayer-ELbot/GreenLuma-Stealth-Manager/releases/latest) page.
-2. Run `GreenLumaManager.exe`. (The application will automatically detect your Steam installation directory).
-3. Search for the games you wish to unlock using the search bar, or paste their AppIDs.
-4. Click **`+ Add DLCs`** on any game card if you want all its expansions unlocked.
-5. Click **`🚀 Launch Steam (GreenLuma)`**.
-6. Steam will launch with your unlocked games in your library.
-7. When you are done playing, open the Manager and click **`🛑 Stop & Clean Files`** (or close Steam) to restore your Steam folder to its completely original state.
+2. Move it to your dedicated folder (e.g. `C:\GreenLuma\GreenLumaManager.exe`).
+3. Run `GreenLumaManager.exe`. (The application will automatically detect your Steam installation directory).
+4. Search for the games you wish to unlock using the search bar, or paste their AppIDs.
+5. Click **`+ Add DLCs`** on any game card if you want all its expansions unlocked.
+6. Click **`🚀 Launch Steam (GreenLuma)`**.
+7. Steam will launch with your unlocked games in your library.
+8. When you are done playing, open the Manager and click **`🛑 Stop & Clean Files`** (or close Steam) to restore your Steam folder to its completely original state.
 
 ---
 
@@ -234,13 +242,21 @@ Launch `GreenLumaManager.exe`. Look at the bottom-right status strip on the cont
 
 ## 🚀 دليل التشغيل السريع
 
+> [!WARNING]
+> ### 📁 القاعدة الإلزامية: إنشاء مجلد مستقل ومخصص للبرنامج أولاً!
+> **إياك وتشغيل `GreenLumaManager.exe` من مجلد التنزيلات (Downloads) مباشرة، أو من داخل ملف مضغوط دون فك الضغط، أو بداخل مجلد Steam الرئيسي!**  
+> 1. أنشئ مجلداً مستقلاً على جهازك (مثال: `C:\GreenLuma` أو مجلد على سطح المكتب).  
+> 2. انقل ملف `GreenLumaManager.exe` داخله.  
+> 3. ضع مجلد `StealthMode/` بجانب `GreenLumaManager.exe` في نفس المجلد.
+
 1. حمّل أحدث نسخة من ملف **`GreenLumaManager.exe`** من صفحة الـ [Releases](https://github.com/Mayer-ELbot/GreenLuma-Stealth-Manager/releases/latest).
-2. افتح ملف `GreenLumaManager.exe` (سيتعرف البرنامج تلقائياً على مسار ستيم في جهازك).
-3. ابحث عن الألعاب التي تريد فتحها في شريط البحث أو اكتب رقم الـ AppID.
-4. اضغط على **"+ إضافة الـ DLCs"** لأي لعبة تريد فتح إضافاتها.
-5. اضغط على الزر الأخضر الرئيسي: **`🚀 تشغيل ستيم مع GreenLuma`**.
-6. سيفتح ستيم وستجد الألعاب في مكتبتك وجاهزة للتحميل واللعب.
-7. بعد الانتهاء من اللعب، اضغط **`🛑 إيقاف وحذف الملفات`** في البرنامج ليعود ستيم أصلياً ونظيفاً تماماً.
+2. انقل الملف إلى مجلده المخصص (مثال: `C:\GreenLuma\GreenLumaManager.exe`).
+3. افتح ملف `GreenLumaManager.exe` (سيتعرف البرنامج تلقائياً على مسار ستيم في جهازك).
+4. ابحث عن الألعاب التي تريد فتحها في شريط البحث أو اكتب رقم الـ AppID.
+5. اضغط على **"+ إضافة الـ DLCs"** لأي لعبة تريد فتح إضافاتها.
+6. اضغط على الزر الأخضر الرئيسي: **`🚀 تشغيل ستيم مع GreenLuma`**.
+7. سيفتح ستيم وستجد الألعاب في مكتبتك وجاهزة للتحميل واللعب.
+8. بعد الانتهاء من اللعب، اضغط **`🛑 إيقاف وحذف الملفات`** في البرنامج ليعود ستيم أصلياً ونظيفاً تماماً.
 
 ---
 
