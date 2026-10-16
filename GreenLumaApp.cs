@@ -266,7 +266,19 @@ namespace GreenLumaManager
 
         public MainWindow()
         {
-            appDir = AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\');
+            try
+            {
+                string exeLocation = Assembly.GetExecutingAssembly().Location;
+                if (!string.IsNullOrEmpty(exeLocation))
+                    appDir = Path.GetDirectoryName(exeLocation);
+                else
+                    appDir = AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\');
+            }
+            catch
+            {
+                appDir = AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\');
+            }
+
             Title = "GreenLuma 2026 - Stealth Pro Hub (Standalone Edition)";
             Width = 1140;
             Height = 780;
@@ -395,11 +407,10 @@ namespace GreenLumaManager
 
             CheckForUpdatesAsync(false);
 
-            // First-Time Step-by-Step Guide
-            if (!settings.firstTimeGuideShown)
+            // First-Time Step-by-Step Guide (Only on genuine 1st launch ever)
+            if (IsFirstTimeUser())
             {
-                settings.firstTimeGuideShown = true;
-                SaveSettings();
+                MarkGuideAsShownPermanently();
                 Dispatcher.BeginInvoke((Action)(() => OpenQuickGuideDialog()));
             }
 
@@ -6398,7 +6409,12 @@ namespace GreenLumaManager
                 HorizontalAlignment = HorizontalAlignment.Center,
                 Margin = new Thickness(0, 16, 0, 0)
             };
-            btnClose.Click += (s, e) => CloseInAppModal();
+            Action doDismiss = () => {
+                MarkGuideAsShownPermanently();
+                CloseInAppModal();
+            };
+
+            btnClose.Click += (s, e) => doDismiss();
             DockPanel.SetDock(btnClose, Dock.Bottom);
             mainDock.Children.Add(btnClose);
 
@@ -6499,7 +6515,80 @@ namespace GreenLumaManager
 
             scroll.Content = sp;
             mainDock.Children.Add(scroll);
-            ShowInAppModal(mainDock, isAr ? "📖 دليل التشغيل السريع - GreenLuma 2026" : "GreenLuma 2026 - Quick Start Guide", null, 680);
+            ShowInAppModal(mainDock, isAr ? "📖 دليل التشغيل السريع - GreenLuma 2026" : "GreenLuma 2026 - Quick Start Guide", () => {
+                MarkGuideAsShownPermanently();
+            }, 680);
+        }
+
+        private bool IsFirstTimeUser()
+        {
+            if (settings != null && settings.firstTimeGuideShown) return false;
+            if (gamesList != null && gamesList.Count > 0) return false;
+
+            string gamesFile = Path.Combine(appDir, "games.json");
+            if (File.Exists(gamesFile))
+            {
+                try
+                {
+                    if (new FileInfo(gamesFile).Length > 10) return false;
+                }
+                catch { }
+            }
+
+            string settingsFile = Path.Combine(appDir, "settings.json");
+            if (File.Exists(settingsFile))
+            {
+                try
+                {
+                    if (new FileInfo(settingsFile).Length > 10) return false;
+                }
+                catch { }
+            }
+
+            string markerFile = Path.Combine(appDir, ".guide_done");
+            if (File.Exists(markerFile)) return false;
+
+            try
+            {
+                using (var key = Registry.CurrentUser.OpenSubKey(@"Software\GreenLuma2026"))
+                {
+                    if (key != null)
+                    {
+                        var val = key.GetValue("FirstTimeGuideShown");
+                        if (val != null && Convert.ToInt32(val) == 1) return false;
+                    }
+                }
+            }
+            catch { }
+
+            return true;
+        }
+
+        private void MarkGuideAsShownPermanently()
+        {
+            try
+            {
+                if (settings != null)
+                {
+                    settings.firstTimeGuideShown = true;
+                    SaveSettings();
+                }
+
+                string markerFile = Path.Combine(appDir, ".guide_done");
+                if (!File.Exists(markerFile))
+                {
+                    File.WriteAllText(markerFile, DateTime.UtcNow.ToString("o"));
+                }
+
+                using (var key = Registry.CurrentUser.CreateSubKey(@"Software\GreenLuma2026"))
+                {
+                    if (key != null)
+                    {
+                        key.SetValue("FirstTimeGuideShown", 1, RegistryValueKind.DWord);
+                    }
+                }
+            }
+            catch { }
         }
 
         // =========================================================================
