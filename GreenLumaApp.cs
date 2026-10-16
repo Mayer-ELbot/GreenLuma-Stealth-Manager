@@ -99,7 +99,7 @@ namespace GreenLumaManager
 
     public class MainWindow : Window
     {
-        public const string CURRENT_VERSION = "v1.4.5";
+        public const string CURRENT_VERSION = "v1.5.0";
         public const string GITHUB_REPO = "Mayer-ELbot/GreenLuma-Stealth-Manager";
 
         [DllImport("user32.dll", SetLastError = true)]
@@ -109,6 +109,14 @@ namespace GreenLumaManager
         private static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
 
         private const uint WM_CLOSE = 0x0010;
+
+        public enum ToastType
+        {
+            Success,
+            Info,
+            Warning,
+            Error
+        }
 
         private string appDir;
         private string steamDir;
@@ -124,11 +132,23 @@ namespace GreenLumaManager
         private Button btnWinMax;
         private Button btnWinClose;
 
+        // In-App Toast & Modal Infrastructure (Multi-Monitor Safe)
+        private StackPanel toastNotificationHost;
+        private Grid inAppModalHost;
+
+        // Active Steam Account Pill
+        private Border accountPillBorder;
+        private TextBlock txtAccountIcon;
+        private TextBlock txtAccountName;
+        private string activeSteamPersona = "";
+        private string activeSteamAccount = "";
+
         // Header Controls
         private TextBlock txtLogoSub;
         private TextBlock txtStatus;
         private Border borderStatusDot;
         private Border borderStatusPulseRing;
+        private Button btnSteamDoctor;
         private Button btnGuide;
         private Button btnSettings;
         private Button btnLangToggle;
@@ -155,13 +175,15 @@ namespace GreenLumaManager
         private TextBlock lblTelemetrySource;
         private Button btnDeckSettings;
 
-        // Search Command Deck
+        // Search Command Deck (100% In-App Overlay, Replaces Floating Win32 Popup)
         private Border searchContainer;
         private TextBox txtGameInput;
         private TextBlock txtSearchPlaceholder;
+        private Button btnClearSearch;
         private Button btnAddInput;
         private Button btnBulk;
-        private Popup searchPopup;
+        private Border searchOverlayBorder;
+        private Grid searchDismissBackdrop;
         private StackPanel searchResultsPanel;
         private TextBlock lblSearchPopupTitle;
         private DispatcherTimer searchDebounceTimer;
@@ -174,10 +196,14 @@ namespace GreenLumaManager
         private Button btnTabGames;
         private Button btnTabDlcs;
         private TextBox txtFilterInput;
+        private Button btnShareLibrary;
+        private Button btnImportLibrary;
         private Button btnToggleAll;
         private Button btnClearAll;
         private WrapPanel gamesWrapPanel;
-        private TextBlock txtEmptyState;
+        private StackPanel emptyStatePanel;
+        private TextBlock txtEmptyTitle;
+        private TextBlock txtEmptySubtitle;
 
         private static readonly int[] DEFAULT_SLOTS = new int[] {
             90, 205, 219, 310, 410, 570, 575, 635, 640, 740, 1213, 1273, 1840, 2145, 2403, 4270, 4940, 
@@ -232,6 +258,22 @@ namespace GreenLumaManager
 
             try { ServicePointManager.SecurityProtocol = (SecurityProtocolType)3072 | SecurityProtocolType.Tls; } catch { }
 
+            this.PreviewKeyDown += (s, e) => {
+                if (e.Key == Key.Escape)
+                {
+                    if (inAppModalHost != null && inAppModalHost.Visibility == Visibility.Visible)
+                    {
+                        CloseInAppModal();
+                        e.Handled = true;
+                    }
+                    else if (searchOverlayBorder != null && searchOverlayBorder.Visibility == Visibility.Visible)
+                    {
+                        CloseSearchOverlay();
+                        e.Handled = true;
+                    }
+                }
+            };
+
             BuildUI();
 
             LoadSettings();
@@ -259,7 +301,7 @@ namespace GreenLumaManager
                 }
                 else
                 {
-                    if (searchPopup != null) searchPopup.IsOpen = false;
+                    CloseSearchOverlay();
                 }
             };
 
@@ -291,11 +333,10 @@ namespace GreenLumaManager
             {
                 Dispatcher.BeginInvoke((Action)(() => {
                     bool isAr = (settings.lang == "ar");
-                    MessageBox.Show(
+                    ShowToast(
                         isAr ? string.Format("🎉 تم تحديث البرنامج بنجاح إلى الإصدار {0}!", CURRENT_VERSION) :
                                string.Format("🎉 Program successfully updated to {0}!", CURRENT_VERSION),
-                        isAr ? "اكتمل التحديث" : "Update Success",
-                        MessageBoxButton.OK, MessageBoxImage.Information);
+                        ToastType.Success, 5000);
                 }));
             }
 
@@ -439,6 +480,711 @@ namespace GreenLumaManager
             catch { }
         }
 
+        public void ShowToast(string message, ToastType type = ToastType.Info, int durationMs = 3500)
+        {
+            Dispatcher.BeginInvoke((Action)(() =>
+            {
+                if (toastNotificationHost == null) return;
+
+                Color bgCol = Color.FromArgb(240, 15, 23, 42); // slate 900
+                Color borderCol = Color.FromArgb(180, 51, 65, 85);
+                Color textCol = Color.FromRgb(248, 250, 252);
+                string icon = "💡";
+
+                switch (type)
+                {
+                    case ToastType.Success:
+                        borderCol = Color.FromRgb(16, 185, 129); // emerald
+                        icon = "✅";
+                        break;
+                    case ToastType.Warning:
+                        borderCol = Color.FromRgb(245, 158, 11); // amber
+                        icon = "⚠️";
+                        break;
+                    case ToastType.Error:
+                        borderCol = Color.FromRgb(239, 68, 68); // rose
+                        icon = "❌";
+                        break;
+                    case ToastType.Info:
+                    default:
+                        borderCol = Color.FromRgb(6, 182, 212); // cyan
+                        icon = "ℹ️";
+                        break;
+                }
+
+                var toastBorder = new Border()
+                {
+                    Background = new SolidColorBrush(bgCol),
+                    BorderBrush = new SolidColorBrush(borderCol),
+                    BorderThickness = new Thickness(1.5),
+                    CornerRadius = new CornerRadius(10),
+                    Padding = new Thickness(14, 10, 14, 10),
+                    Margin = new Thickness(0, 0, 0, 8),
+                    MaxWidth = 420,
+                    MinHeight = 44,
+                    Effect = new DropShadowEffect()
+                    {
+                        Color = borderCol,
+                        BlurRadius = 16,
+                        ShadowDepth = 2,
+                        Opacity = 0.45
+                    },
+                    Opacity = 0
+                };
+
+                var dock = new DockPanel() { LastChildFill = true };
+
+                var btnClose = new TextBlock()
+                {
+                    Text = "✕",
+                    FontSize = 12,
+                    FontWeight = FontWeights.Bold,
+                    Foreground = new SolidColorBrush(Color.FromRgb(148, 163, 184)),
+                    Cursor = Cursors.Hand,
+                    Margin = new Thickness(12, 0, 0, 0),
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                DockPanel.SetDock(btnClose, Dock.Right);
+
+                var contentStack = new StackPanel() { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+                var txtIcon = new TextBlock()
+                {
+                    Text = icon,
+                    FontSize = 14,
+                    Margin = new Thickness(0, 0, 8, 0),
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                var txtMsg = new TextBlock()
+                {
+                    Text = message,
+                    FontSize = 12,
+                    FontWeight = FontWeights.SemiBold,
+                    Foreground = new SolidColorBrush(textCol),
+                    TextWrapping = TextWrapping.Wrap,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    MaxWidth = 330
+                };
+                contentStack.Children.Add(txtIcon);
+                contentStack.Children.Add(txtMsg);
+
+                dock.Children.Add(btnClose);
+                dock.Children.Add(contentStack);
+                toastBorder.Child = dock;
+
+                toastNotificationHost.Children.Add(toastBorder);
+                var fadeIn = new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(200));
+                toastBorder.BeginAnimation(UIElement.OpacityProperty, fadeIn);
+
+                DispatcherTimer timer = new DispatcherTimer() { Interval = TimeSpan.FromMilliseconds(durationMs) };
+                Action dismiss = () =>
+                {
+                    timer.Stop();
+                    var fadeOut = new DoubleAnimation(toastBorder.Opacity, 0, TimeSpan.FromMilliseconds(200));
+                    fadeOut.Completed += (s, e) => {
+                        try { toastNotificationHost.Children.Remove(toastBorder); } catch { }
+                    };
+                    toastBorder.BeginAnimation(UIElement.OpacityProperty, fadeOut);
+                };
+
+                timer.Tick += (s, e) => dismiss();
+                timer.Start();
+
+                btnClose.MouseDown += (s, e) => dismiss();
+            }));
+        }
+
+        public void ShowInAppModal(FrameworkElement body, string title = null, Action onClose = null, double maxWidth = 700)
+        {
+            Dispatcher.Invoke((Action)(() =>
+            {
+                if (inAppModalHost == null) return;
+                inAppModalHost.Children.Clear();
+                bool isAr = (settings.lang == "ar");
+
+                var cardBorder = new Border()
+                {
+                    MaxWidth = maxWidth,
+                    MaxHeight = 640,
+                    Margin = new Thickness(24),
+                    Background = new SolidColorBrush(Color.FromRgb(13, 18, 28)),
+                    BorderBrush = new SolidColorBrush(Color.FromRgb(16, 185, 129)),
+                    BorderThickness = new Thickness(1.5),
+                    CornerRadius = new CornerRadius(12),
+                    Padding = new Thickness(18),
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Effect = new DropShadowEffect()
+                    {
+                        Color = Color.FromRgb(16, 185, 129),
+                        BlurRadius = 30,
+                        ShadowDepth = 4,
+                        Opacity = 0.4
+                    }
+                };
+
+                var dock = new DockPanel() { LastChildFill = true };
+
+                var headerDock = new DockPanel() { Margin = new Thickness(0, 0, 0, 14) };
+                var btnClose = new Button()
+                {
+                    Content = "✕",
+                    FontSize = 13,
+                    FontWeight = FontWeights.Bold,
+                    Foreground = new SolidColorBrush(Color.FromRgb(148, 163, 184)),
+                    Background = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)),
+                    BorderThickness = new Thickness(0),
+                    Padding = new Thickness(8, 4, 8, 4),
+                    Cursor = Cursors.Hand,
+                    HorizontalAlignment = HorizontalAlignment.Right
+                };
+                DockPanel.SetDock(btnClose, Dock.Right);
+
+                Action doClose = () =>
+                {
+                    inAppModalHost.Visibility = Visibility.Collapsed;
+                    inAppModalHost.Children.Clear();
+                    if (onClose != null) onClose();
+                };
+
+                btnClose.Click += (s, e) => doClose();
+
+                var txtTitle = new TextBlock()
+                {
+                    Text = title ?? "",
+                    FontSize = 15,
+                    FontWeight = FontWeights.Bold,
+                    Foreground = new SolidColorBrush(Color.FromRgb(248, 250, 252)),
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                headerDock.Children.Add(btnClose);
+                headerDock.Children.Add(txtTitle);
+                DockPanel.SetDock(headerDock, Dock.Top);
+                dock.Children.Add(headerDock);
+
+                dock.Children.Add(body);
+                cardBorder.Child = dock;
+
+                inAppModalHost.Children.Add(cardBorder);
+                inAppModalHost.Visibility = Visibility.Visible;
+            }));
+        }
+
+        public void CloseInAppModal()
+        {
+            Dispatcher.Invoke((Action)(() =>
+            {
+                if (inAppModalHost != null)
+                {
+                    inAppModalHost.Visibility = Visibility.Collapsed;
+                    inAppModalHost.Children.Clear();
+                }
+            }));
+        }
+
+        public void ShowSearchOverlay()
+        {
+            if (searchOverlayBorder != null) searchOverlayBorder.Visibility = Visibility.Visible;
+            if (searchDismissBackdrop != null) searchDismissBackdrop.Visibility = Visibility.Visible;
+        }
+
+        public void CloseSearchOverlay()
+        {
+            if (searchOverlayBorder != null) searchOverlayBorder.Visibility = Visibility.Collapsed;
+            if (searchDismissBackdrop != null) searchDismissBackdrop.Visibility = Visibility.Collapsed;
+        }
+
+        private void DetectActiveSteamAccount()
+        {
+            if (string.IsNullOrEmpty(steamDir)) return;
+            string vdfPath = Path.Combine(steamDir, "config", "loginusers.vdf");
+            if (!File.Exists(vdfPath)) return;
+
+            try
+            {
+                string[] lines = File.ReadAllLines(vdfPath);
+                string currentPersona = "";
+                string currentAccount = "";
+                long currentTimestamp = 0;
+                bool isMostRecent = false;
+
+                string bestPersona = "";
+                string bestAccount = "";
+                long bestTimestamp = -1;
+
+                foreach (string rawLine in lines)
+                {
+                    string line = rawLine.Trim();
+                    if (line.StartsWith("\"PersonaName\"", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var match = Regex.Match(line, "\"PersonaName\"\\s+\"([^\"]+)\"");
+                        if (match.Success) currentPersona = match.Groups[1].Value;
+                    }
+                    else if (line.StartsWith("\"AccountName\"", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var match = Regex.Match(line, "\"AccountName\"\\s+\"([^\"]+)\"");
+                        if (match.Success) currentAccount = match.Groups[1].Value;
+                    }
+                    else if (line.StartsWith("\"MostRecent\"", StringComparison.OrdinalIgnoreCase) || line.StartsWith("\"AutoLogin\"", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var match = Regex.Match(line, "\"(?:MostRecent|AutoLogin)\"\\s+\"([^\"]+)\"");
+                        if (match.Success && match.Groups[1].Value == "1")
+                        {
+                            isMostRecent = true;
+                        }
+                    }
+                    else if (line.StartsWith("\"timestamp\"", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var match = Regex.Match(line, "\"timestamp\"\\s+\"([^\"]+)\"");
+                        if (match.Success) long.TryParse(match.Groups[1].Value, out currentTimestamp);
+                    }
+                    else if (line == "}")
+                    {
+                        if (!string.IsNullOrEmpty(currentPersona))
+                        {
+                            if (isMostRecent || currentTimestamp > bestTimestamp)
+                            {
+                                bestPersona = currentPersona;
+                                bestAccount = currentAccount;
+                                bestTimestamp = currentTimestamp;
+                                if (isMostRecent) break;
+                            }
+                        }
+                        currentPersona = "";
+                        currentAccount = "";
+                        currentTimestamp = 0;
+                        isMostRecent = false;
+                    }
+                }
+
+                if (!string.IsNullOrEmpty(bestPersona))
+                {
+                    activeSteamPersona = bestPersona;
+                    activeSteamAccount = bestAccount;
+                }
+            }
+            catch { }
+        }
+
+        private int KillZombieSteamProcesses()
+        {
+            int killed = 0;
+            string[] targets = new string[] { "steam", "steamwebhelper", "gameoverlayui" };
+            foreach (string name in targets)
+            {
+                try
+                {
+                    foreach (var p in Process.GetProcessesByName(name))
+                    {
+                        try
+                        {
+                            p.Kill();
+                            p.WaitForExit(1000);
+                            killed++;
+                        }
+                        catch { }
+                    }
+                }
+                catch { }
+            }
+            if (killed > 0)
+            {
+                Thread.Sleep(400);
+            }
+            return killed;
+        }
+
+        private string AutoScanSteamDrives()
+        {
+            try
+            {
+                using (var key = Registry.CurrentUser.OpenSubKey(@"Software\Valve\Steam"))
+                {
+                    if (key != null)
+                    {
+                        string p = key.GetValue("SteamPath") as string;
+                        if (!string.IsNullOrEmpty(p) && File.Exists(Path.Combine(p, "steam.exe")))
+                            return Path.GetFullPath(p);
+                    }
+                }
+            }
+            catch { }
+
+            string[] subPaths = new string[] {
+                @"Steam",
+                @"Program Files (x86)\Steam",
+                @"Program Files\Steam",
+                @"Games\Steam"
+            };
+
+            foreach (var drive in DriveInfo.GetDrives())
+            {
+                if (!drive.IsReady) continue;
+                string root = drive.RootDirectory.FullName;
+                foreach (var sub in subPaths)
+                {
+                    try
+                    {
+                        string candidate = Path.Combine(root, sub);
+                        if (File.Exists(Path.Combine(candidate, "steam.exe")))
+                            return Path.GetFullPath(candidate);
+                    }
+                    catch { }
+                }
+            }
+            return null;
+        }
+
+        private bool SanitizeAppListBOM()
+        {
+            bool fixedAny = false;
+            List<string> iniFiles = new List<string>();
+            iniFiles.Add(Path.Combine(appDir, "AppList.ini"));
+            if (!string.IsNullOrEmpty(steamDir))
+            {
+                iniFiles.Add(Path.Combine(steamDir, "AppList", "AppList.ini"));
+            }
+
+            var utf8NoBom = new UTF8Encoding(false);
+            foreach (string file in iniFiles)
+            {
+                try
+                {
+                    if (File.Exists(file))
+                    {
+                        byte[] bytes = File.ReadAllBytes(file);
+                        if (bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
+                        {
+                            string text = Encoding.UTF8.GetString(bytes, 3, bytes.Length - 3);
+                            File.WriteAllText(file, text, utf8NoBom);
+                            fixedAny = true;
+                        }
+                    }
+                }
+                catch { }
+            }
+            return fixedAny;
+        }
+
+        private bool WipeAndDummyAppCache()
+        {
+            if (string.IsNullOrEmpty(steamDir)) return false;
+            try
+            {
+                string cacheDir = Path.Combine(steamDir, "appcache");
+                if (Directory.Exists(cacheDir))
+                {
+                    string pkg = Path.Combine(cacheDir, "packageinfo.vdf");
+                    if (File.Exists(pkg))
+                    {
+                        try { File.Delete(pkg); } catch { }
+                        try { File.WriteAllBytes(pkg, new byte[] { 0x01 }); } catch { }
+                    }
+                    string appinfo = Path.Combine(cacheDir, "appinfo.vdf");
+                    if (File.Exists(appinfo))
+                    {
+                        try { File.Delete(appinfo); } catch { }
+                    }
+                    return true;
+                }
+            }
+            catch { }
+            return false;
+        }
+
+        private void ExportLibraryToClipboard()
+        {
+            bool isAr = (settings.lang == "ar");
+            if (gamesList.Count == 0)
+            {
+                ShowToast(isAr ? "القائمة فارغة، أضف بعض الألعاب أولاً!" : "Library is empty, add games first!", ToastType.Warning);
+                return;
+            }
+
+            StringBuilder sb = new StringBuilder();
+            sb.AppendLine("# GreenLuma Unlocked Library Export");
+            foreach (var g in gamesList)
+            {
+                sb.AppendLine(string.Format("{0} = {1} [{2}]", g.appId, g.name, g.CheckIsDLC() ? "DLC" : "GAME"));
+            }
+            try
+            {
+                Clipboard.SetText(sb.ToString());
+                ShowToast(
+                    isAr ? string.Format("✅ تم نسخ {0} عناصر إلى الحافظة للمشاركة!", gamesList.Count) :
+                           string.Format("✅ Exported {0} games to clipboard!", gamesList.Count),
+                    ToastType.Success);
+            }
+            catch (Exception ex)
+            {
+                ShowToast(ex.Message, ToastType.Error);
+            }
+        }
+
+        private void ImportLibraryFromClipboard()
+        {
+            bool isAr = (settings.lang == "ar");
+            try
+            {
+                string text = Clipboard.GetText();
+                if (string.IsNullOrEmpty(text))
+                {
+                    ShowToast(isAr ? "الحافظة فارغة!" : "Clipboard is empty!", ToastType.Warning);
+                    return;
+                }
+
+                var matches = Regex.Matches(text, @"\b(\d{3,8})\b");
+                if (matches.Count == 0)
+                {
+                    ShowToast(isAr ? "لم يتم العثور على أرقام AppID صالحة في الحافظة!" : "No valid AppIDs found in clipboard!", ToastType.Warning);
+                    return;
+                }
+
+                int added = 0;
+                HashSet<int> existing = new HashSet<int>();
+                foreach (var g in gamesList) existing.Add(g.appId);
+
+                foreach (Match m in matches)
+                {
+                    int id;
+                    if (int.TryParse(m.Groups[1].Value, out id))
+                    {
+                        if (!existing.Contains(id))
+                        {
+                            existing.Add(id);
+                            gamesList.Add(new GameItem() {
+                                appId = id,
+                                name = "Steam App " + id,
+                                image = string.Format("https://cdn.cloudflare.steamstatic.com/steam/apps/{0}/header.jpg", id),
+                                enabled = true
+                            });
+                            added++;
+                        }
+                    }
+                }
+
+                if (added > 0)
+                {
+                    SaveGames();
+                    UpdateTabButtonStyles();
+                    RenderGamesUI();
+                    ShowToast(
+                        isAr ? string.Format("✅ تم استيراد {0} لعبة جديدة بنجاح!", added) :
+                               string.Format("✅ Successfully imported {0} games!", added),
+                        ToastType.Success);
+                }
+                else
+                {
+                    ShowToast(isAr ? "جميع الألعاب موجودة بالفعل في قائمتك!" : "All games are already in your library!", ToastType.Info);
+                }
+            }
+            catch (Exception ex)
+            {
+                ShowToast(ex.Message, ToastType.Error);
+            }
+        }
+
+        private void OpenSteamDoctorModal()
+        {
+            bool isAr = (settings.lang == "ar");
+            var mainStack = new StackPanel() { Margin = new Thickness(4) };
+
+            var descText = new TextBlock() {
+                Text = isAr ? 
+                    "يقوم طبيب ستيم بفحص العمليات العالقة في الذاكرة، وسلامة ملفات AppList، والكاش المتراكم، وملفات التخفي." :
+                    "Steam Doctor automatically inspects zombie background processes, AppList BOM integrity, appcache locks, and stealth payload status.",
+                FontSize = 12,
+                Foreground = new SolidColorBrush(Color.FromRgb(148, 163, 184)),
+                Margin = new Thickness(0, 0, 0, 16),
+                TextWrapping = TextWrapping.Wrap
+            };
+            mainStack.Children.Add(descText);
+
+            var cardsContainer = new StackPanel();
+
+            Func<string, string, bool, Border> createDiagRow = (title, details, isHealthy) =>
+            {
+                var row = new Border() {
+                    Background = new SolidColorBrush(Color.FromRgb(18, 24, 38)),
+                    BorderBrush = isHealthy ? 
+                        new SolidColorBrush(Color.FromArgb(90, 16, 185, 129)) : 
+                        new SolidColorBrush(Color.FromArgb(90, 239, 68, 68)),
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(8),
+                    Padding = new Thickness(12, 10, 12, 10),
+                    Margin = new Thickness(0, 0, 0, 8)
+                };
+
+                var rowDock = new DockPanel() { LastChildFill = true };
+
+                var badge = new Border() {
+                    Background = isHealthy ? new SolidColorBrush(Color.FromArgb(40, 16, 185, 129)) : new SolidColorBrush(Color.FromArgb(40, 239, 68, 68)),
+                    BorderBrush = isHealthy ? new SolidColorBrush(Color.FromRgb(16, 185, 129)) : new SolidColorBrush(Color.FromRgb(239, 68, 68)),
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(5),
+                    Padding = new Thickness(8, 2, 8, 2),
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                DockPanel.SetDock(badge, Dock.Right);
+                badge.Child = new TextBlock() {
+                    Text = isHealthy ? (isAr ? "✅ سليم" : "✅ HEALTHY") : (isAr ? "⚠️ يحتاج إصلاح" : "⚠️ ISSUE DETECTED"),
+                    FontSize = 10.5,
+                    FontWeight = FontWeights.Bold,
+                    Foreground = isHealthy ? new SolidColorBrush(Color.FromRgb(110, 231, 183)) : new SolidColorBrush(Color.FromRgb(252, 165, 165))
+                };
+                rowDock.Children.Add(badge);
+
+                var textStack = new StackPanel();
+                textStack.Children.Add(new TextBlock() {
+                    Text = title,
+                    FontSize = 12.5,
+                    FontWeight = FontWeights.Bold,
+                    Foreground = new SolidColorBrush(Color.FromRgb(241, 245, 249))
+                });
+                textStack.Children.Add(new TextBlock() {
+                    Text = details,
+                    FontSize = 11,
+                    Foreground = new SolidColorBrush(Color.FromRgb(148, 163, 184)),
+                    Margin = new Thickness(0, 2, 0, 0)
+                });
+                rowDock.Children.Add(textStack);
+
+                row.Child = rowDock;
+                return row;
+            };
+
+            Action populateRows = () =>
+            {
+                cardsContainer.Children.Clear();
+
+                // 1. Process Check
+                int zombieCount = 0;
+                foreach (var p in Process.GetProcessesByName("steam")) zombieCount++;
+                foreach (var p in Process.GetProcessesByName("steamwebhelper")) zombieCount++;
+                bool procHealthy = (zombieCount == 0 || !IsSteamRunning());
+                cardsContainer.Children.Add(createDiagRow(
+                    isAr ? "1. حالة عمليات ستيم (Steam Background Processes)" : "1. Steam Background Processes",
+                    zombieCount > 0 ? (isAr ? string.Format("يوجد {0} عمليات قيد التشغيل قد تقفل ملفات user32.dll", zombieCount) : string.Format("{0} background processes detected", zombieCount)) :
+                                      (isAr ? "لا توجد عمليات عالقة في الخلفية، الذاكرة نظيفة." : "Clean memory, no lingering processes."),
+                    procHealthy
+                ));
+
+                // 2. Steam Path Check
+                bool pathHealthy = !string.IsNullOrEmpty(steamDir) && Directory.Exists(steamDir) && File.Exists(Path.Combine(steamDir, "steam.exe"));
+                cardsContainer.Children.Add(createDiagRow(
+                    isAr ? "2. مسار مجلد ستيم (Steam Installation Directory)" : "2. Steam Installation Directory",
+                    pathHealthy ? steamDir : (isAr ? "لم يتم العثور على مسار ستيم الصحيح!" : "Steam path missing or invalid!"),
+                    pathHealthy
+                ));
+
+                // 3. BOM & AppList Check
+                bool bomFound = false;
+                string appIni = Path.Combine(appDir, "AppList.ini");
+                if (File.Exists(appIni))
+                {
+                    byte[] b = File.ReadAllBytes(appIni);
+                    if (b.Length >= 3 && b[0] == 0xEF && b[1] == 0xBB && b[2] == 0xBF) bomFound = true;
+                }
+                cardsContainer.Children.Add(createDiagRow(
+                    isAr ? "3. ترميز ملفات AppList (UTF-8 No-BOM Integrity)" : "3. AppList UTF-8 No-BOM Integrity",
+                    bomFound ? (isAr ? "تم اكتشاف علامة BOM غير مرغوبة قد تسبب فشل قراءة الألعاب" : "UTF-8 BOM detected in AppList.ini") :
+                               (isAr ? "ترميز ملفات الألعاب نظيف 100% ومطابق لـ GreenLuma" : "Clean UTF-8 encoding without BOM."),
+                    !bomFound
+                ));
+
+                // 4. AppCache State
+                bool cacheIssue = false;
+                if (!string.IsNullOrEmpty(steamDir))
+                {
+                    string pkg = Path.Combine(steamDir, "appcache", "packageinfo.vdf");
+                    if (File.Exists(pkg))
+                    {
+                        var fi = new FileInfo(pkg);
+                        if (fi.Length > 200000000) cacheIssue = true;
+                    }
+                }
+                cardsContainer.Children.Add(createDiagRow(
+                    isAr ? "4. حالة الكاش المؤقت (AppCache & packageinfo.vdf)" : "4. AppCache & packageinfo.vdf State",
+                    cacheIssue ? (isAr ? "ملف packageinfo.vdf متضخم ومقفل، يفضل تصفيره" : "Bloated packageinfo.vdf cache file") :
+                                 (isAr ? "الكاش مهيأ ومستعد لحقن الألعاب الجديدة" : "AppCache is ready for clean injection."),
+                    !cacheIssue
+                ));
+
+                // 5. Payload Integrity
+                string srcDesc;
+                byte[] sf = GetPayloadBytes("user32SF.dll", out srcDesc);
+                bool payloadHealthy = (sf != null && sf.Length > 0);
+                cardsContainer.Children.Add(createDiagRow(
+                    isAr ? "5. سلامة ملفات التخفي (Stealth Hook user32SF.dll)" : "5. Stealth Hook Integrity",
+                    payloadHealthy ? (isAr ? "ملف التخفي جاهز وموجود في الذاكرة/المجلد" : "Payload verified and ready.") :
+                                     (isAr ? "ملف التخفي مفقود أو محجوب بواسطة مضاد الفيروسات!" : "Payload missing or blocked by Defender!"),
+                    payloadHealthy
+                ));
+            };
+
+            populateRows();
+            mainStack.Children.Add(cardsContainer);
+
+            var actionDock = new DockPanel() { Margin = new Thickness(0, 16, 0, 0) };
+
+            var btnAutoFix = new Button() {
+                Content = isAr ? "⚡ إصلاح وتطهير كافة المشاكل بنقرة واحدة (Auto-Fix All)" : "⚡ Auto-Fix All Issues Now",
+                Background = new SolidColorBrush(Color.FromRgb(16, 185, 129)),
+                Foreground = new SolidColorBrush(Color.FromRgb(5, 15, 10)),
+                FontWeight = FontWeights.Bold,
+                FontSize = 13,
+                Padding = new Thickness(16, 10, 16, 10),
+                Cursor = Cursors.Hand,
+                BorderThickness = new Thickness(0)
+            };
+            btnAutoFix.Click += (s, e) => {
+                int killed = KillZombieSteamProcesses();
+                SanitizeAppListBOM();
+                SyncAppListIni();
+                WipeAndDummyAppCache();
+
+                if (string.IsNullOrEmpty(steamDir) || !Directory.Exists(steamDir))
+                {
+                    string scanned = AutoScanSteamDrives();
+                    if (!string.IsNullOrEmpty(scanned))
+                    {
+                        steamDir = scanned;
+                        settings.customSteamPath = scanned;
+                        SaveSettings();
+                    }
+                }
+
+                populateRows();
+                ShowToast(
+                    isAr ? string.Format("✅ اكتمل الفحص والإصلاح الذكي! تم إنهاء {0} عمليات وتطهير الكاش والملفات.", killed) :
+                           string.Format("✅ Auto-Fix complete! Terminated {0} processes, cleaned AppCache & BOM.", killed),
+                    ToastType.Success,
+                    4000
+                );
+            };
+            DockPanel.SetDock(btnAutoFix, Dock.Left);
+            actionDock.Children.Add(btnAutoFix);
+
+            var btnDeepClean = new Button() {
+                Content = isAr ? "🧹 تنظيف عميق لستيم" : "🧹 Deep Clean Steam",
+                Background = new SolidColorBrush(Color.FromArgb(40, 239, 68, 68)),
+                Foreground = new SolidColorBrush(Color.FromRgb(248, 113, 113)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(80, 239, 68, 68)),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(12, 10, 12, 10),
+                Cursor = Cursors.Hand,
+                HorizontalAlignment = HorizontalAlignment.Right
+            };
+            btnDeepClean.Click += (s, e) => {
+                PurgeAllArtifacts();
+                populateRows();
+            };
+            actionDock.Children.Add(btnDeepClean);
+
+            mainStack.Children.Add(actionDock);
+
+            ShowInAppModal(mainStack, isAr ? "🩺 طبيب ستيم وفحص المشاكل (Steam Doctor)" : "🩺 Steam Doctor & Diagnostic Hub", null, 680);
+        }
+
         private void ToggleMaximize()
         {
             if (WindowState == WindowState.Maximized)
@@ -541,13 +1287,19 @@ namespace GreenLumaManager
             headerGrid.Children.Add(logoStack);
 
             // Col 1: Center Live Status Radar Pill (Never overlaps!)
+            // Col 1: Center Live Status Radar Pill & Active Steam Account Pill
+            var centerPillsStack = new StackPanel() {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+
             var statusPillBorder = new Border() {
                 Background = new SolidColorBrush(Color.FromArgb(50, 15, 23, 42)),
                 BorderBrush = new SolidColorBrush(Color.FromArgb(60, 255, 255, 255)),
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(16),
                 Padding = new Thickness(12, 4, 14, 4),
-                HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center
             };
             var statusPillStack = new StackPanel() { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
@@ -581,11 +1333,59 @@ namespace GreenLumaManager
             };
             statusPillStack.Children.Add(txtStatus);
             statusPillBorder.Child = statusPillStack;
-            Grid.SetColumn(statusPillBorder, 1);
-            headerGrid.Children.Add(statusPillBorder);
+            centerPillsStack.Children.Add(statusPillBorder);
+
+            // Active Steam Account Pill
+            accountPillBorder = new Border() {
+                Background = new SolidColorBrush(Color.FromArgb(50, 15, 23, 42)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(70, 6, 182, 212)),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(16),
+                Padding = new Thickness(10, 4, 12, 4),
+                Margin = new Thickness(8, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+                Cursor = Cursors.Hand,
+                Visibility = Visibility.Collapsed
+            };
+            var accountStack = new StackPanel() { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+            txtAccountIcon = new TextBlock() { Text = "👤", FontSize = 11, Margin = new Thickness(0, 0, 6, 0) };
+            txtAccountName = new TextBlock() {
+                Text = "Steam User",
+                FontSize = 11,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = new SolidColorBrush(Color.FromRgb(203, 213, 225))
+            };
+            accountStack.Children.Add(txtAccountIcon);
+            accountStack.Children.Add(txtAccountName);
+            accountPillBorder.Child = accountStack;
+            accountPillBorder.MouseDown += (s, e) => {
+                bool isAr = (settings.lang == "ar");
+                ShowToast(
+                    isAr ? string.Format("الحساب النشط في ستيم: {0} ({1})", activeSteamPersona, activeSteamAccount) :
+                           string.Format("Active Steam Account: {0} ({1})", activeSteamPersona, activeSteamAccount),
+                    ToastType.Info
+                );
+            };
+            centerPillsStack.Children.Add(accountPillBorder);
+
+            Grid.SetColumn(centerPillsStack, 1);
+            headerGrid.Children.Add(centerPillsStack);
 
             // Col 2: Action Buttons & Custom Window Controls
             var rightHeaderStack = new StackPanel() { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
+
+            btnSteamDoctor = new Button() {
+                Content = "🩺 Steam Doctor",
+                Background = new SolidColorBrush(Color.FromArgb(45, 6, 182, 212)),
+                Foreground = new SolidColorBrush(Color.FromRgb(103, 232, 249)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(80, 6, 182, 212)),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(9, 4, 9, 4),
+                Cursor = Cursors.Hand,
+                Margin = new Thickness(0, 0, 6, 0)
+            };
+            btnSteamDoctor.Click += (s, e) => OpenSteamDoctorModal();
+            rightHeaderStack.Children.Add(btnSteamDoctor);
 
             btnGuide = new Button() {
                 Content = "📖 Guide",
@@ -1089,7 +1889,7 @@ namespace GreenLumaManager
                 Foreground = new SolidColorBrush(Color.FromRgb(241, 245, 249)),
                 BorderThickness = new Thickness(0),
                 VerticalContentAlignment = VerticalAlignment.Center,
-                Padding = new Thickness(4, 0, 4, 0)
+                Padding = new Thickness(4, 0, 28, 0)
             };
             txtSearchPlaceholder = new TextBlock() {
                 Text = "Search any Steam game or DLC by name (e.g. Arc Raiders, Black Myth, Elden Ring) or enter AppID...",
@@ -1099,12 +1899,32 @@ namespace GreenLumaManager
                 Margin = new Thickness(5, 0, 0, 0),
                 IsHitTestVisible = false
             };
+            btnClearSearch = new Button() {
+                Content = "✕",
+                FontSize = 11,
+                FontWeight = FontWeights.Bold,
+                Foreground = new SolidColorBrush(Color.FromRgb(148, 163, 184)),
+                Background = Brushes.Transparent,
+                BorderThickness = new Thickness(0),
+                Cursor = Cursors.Hand,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 8, 0),
+                Visibility = Visibility.Collapsed
+            };
+            btnClearSearch.Click += (s, e) => {
+                txtGameInput.Text = "";
+                CloseSearchOverlay();
+            };
+
             inputGrid.Children.Add(txtSearchPlaceholder);
             inputGrid.Children.Add(txtGameInput);
+            inputGrid.Children.Add(btnClearSearch);
             searchDock.Children.Add(inputGrid);
 
             txtGameInput.TextChanged += (s, e) => {
                 txtSearchPlaceholder.Visibility = string.IsNullOrEmpty(txtGameInput.Text) ? Visibility.Visible : Visibility.Collapsed;
+                btnClearSearch.Visibility = string.IsNullOrEmpty(txtGameInput.Text) ? Visibility.Collapsed : Visibility.Visible;
                 searchDebounceTimer.Stop();
                 searchDebounceTimer.Start();
             };
@@ -1119,7 +1939,7 @@ namespace GreenLumaManager
                     int id;
                     if (int.TryParse(raw, out id) && id > 0)
                     {
-                        if (searchPopup != null) searchPopup.IsOpen = false;
+                        CloseSearchOverlay();
                         AddGameById(id, null);
                         txtGameInput.Text = "";
                     }
@@ -1128,7 +1948,7 @@ namespace GreenLumaManager
                         if (lastSearchResults != null && lastSearchResults.Count > 0)
                         {
                             var top = lastSearchResults[0];
-                            if (searchPopup != null) searchPopup.IsOpen = false;
+                            CloseSearchOverlay();
                             AddGameById(top.id, top.name);
                             txtGameInput.Text = "";
                         }
@@ -1140,7 +1960,7 @@ namespace GreenLumaManager
                 }
                 else if (e.Key == Key.Escape)
                 {
-                    if (searchPopup != null) searchPopup.IsOpen = false;
+                    CloseSearchOverlay();
                 }
             };
 
@@ -1149,24 +1969,27 @@ namespace GreenLumaManager
             Grid.SetRow(discoveryBorder, 3);
             mainGrid.Children.Add(discoveryBorder);
 
-            // Floating Search Results Popup
-            searchPopup = new Popup() {
-                PlacementTarget = searchContainer,
-                Placement = PlacementMode.Bottom,
-                StaysOpen = false,
-                AllowsTransparency = true,
-                HorizontalOffset = 0,
-                VerticalOffset = 4
+            // Transparent Dismiss Backdrop for In-App Search Overlay (Multi-Monitor Safe)
+            searchDismissBackdrop = new Grid() {
+                Background = Brushes.Transparent,
+                Visibility = Visibility.Collapsed
             };
+            Grid.SetRowSpan(searchDismissBackdrop, 5);
+            Panel.SetZIndex(searchDismissBackdrop, 1400);
+            searchDismissBackdrop.MouseDown += (s, e) => CloseSearchOverlay();
+            mainGrid.Children.Add(searchDismissBackdrop);
 
-            var popupBorder = new Border() {
-                Width = 780,
+            // In-App Search Results Overlay
+            searchOverlayBorder = new Border() {
+                Margin = new Thickness(20, 52, 20, 0),
                 MaxHeight = 440,
                 Background = new SolidColorBrush(Color.FromRgb(11, 16, 26)),
                 BorderBrush = new SolidColorBrush(Color.FromRgb(16, 185, 129)),
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(8),
-                Padding = new Thickness(10)
+                Padding = new Thickness(10),
+                VerticalAlignment = VerticalAlignment.Top,
+                Visibility = Visibility.Collapsed
             };
             var popupGlow = new DropShadowEffect() {
                 Color = Color.FromRgb(16, 185, 129),
@@ -1174,7 +1997,7 @@ namespace GreenLumaManager
                 ShadowDepth = 4,
                 Opacity = 0.6
             };
-            popupBorder.Effect = popupGlow;
+            searchOverlayBorder.Effect = popupGlow;
 
             var popupContentStack = new StackPanel();
             var popupHeaderDock = new DockPanel() { Margin = new Thickness(4, 2, 4, 8) };
@@ -1205,8 +2028,11 @@ namespace GreenLumaManager
             popupScroll.Content = searchResultsPanel;
             popupContentStack.Children.Add(popupScroll);
 
-            popupBorder.Child = popupContentStack;
-            searchPopup.Child = popupBorder;
+            searchOverlayBorder.Child = popupContentStack;
+            Grid.SetRow(searchOverlayBorder, 3);
+            Grid.SetRowSpan(searchOverlayBorder, 2);
+            Panel.SetZIndex(searchOverlayBorder, 1500);
+            mainGrid.Children.Add(searchOverlayBorder);
 
             // =========================================================================
             // --- 4. SELECTED GAMES & DLCS (Library Grid with Filter Tabs) ---
@@ -1253,6 +2079,32 @@ namespace GreenLumaManager
             txtFilterInput.TextChanged += (s, e) => RenderGamesUI();
             libToolsStack.Children.Add(txtFilterInput);
 
+            btnShareLibrary = new Button() {
+                Content = "📋 Share",
+                Background = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)),
+                Foreground = new SolidColorBrush(Color.FromRgb(226, 232, 240)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(8, 4, 8, 4),
+                Cursor = Cursors.Hand,
+                Margin = new Thickness(0, 0, 6, 0)
+            };
+            btnShareLibrary.Click += (s, e) => ExportLibraryToClipboard();
+            libToolsStack.Children.Add(btnShareLibrary);
+
+            btnImportLibrary = new Button() {
+                Content = "📥 Import",
+                Background = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)),
+                Foreground = new SolidColorBrush(Color.FromRgb(226, 232, 240)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(8, 4, 8, 4),
+                Cursor = Cursors.Hand,
+                Margin = new Thickness(0, 0, 6, 0)
+            };
+            btnImportLibrary.Click += (s, e) => ImportLibraryFromClipboard();
+            libToolsStack.Children.Add(btnImportLibrary);
+
             btnToggleAll = new Button() {
                 Content = "🔄 Toggle All",
                 Background = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)),
@@ -1292,6 +2144,7 @@ namespace GreenLumaManager
                     gamesList.Clear();
                     SaveGames();
                     RenderGamesUI();
+                    ShowToast(isAr ? "تم مسح كافة الألعاب من القائمة" : "Library cleared successfully", ToastType.Info);
                 }
             };
             libToolsStack.Children.Add(btnClearAll);
@@ -1309,17 +2162,98 @@ namespace GreenLumaManager
             gamesWrapPanel = new WrapPanel() { Orientation = Orientation.Horizontal };
             gamesContainerGrid.Children.Add(gamesWrapPanel);
 
-            txtEmptyState = new TextBlock() {
-                Text = "No games selected yet.\nSearch above by game title or enter AppID to unlock it in your library.",
-                FontSize = 14,
-                TextAlignment = TextAlignment.Center,
-                Foreground = new SolidColorBrush(Color.FromRgb(100, 116, 139)),
+            // Modern Empty State with Trending Quick-Add Chips
+            emptyStatePanel = new StackPanel() {
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 60, 0, 0),
+                Margin = new Thickness(0, 50, 0, 20),
                 Visibility = Visibility.Collapsed
             };
-            gamesContainerGrid.Children.Add(txtEmptyState);
+
+            var emptyIconBorder = new Border() {
+                Width = 64,
+                Height = 64,
+                CornerRadius = new CornerRadius(32),
+                Background = new SolidColorBrush(Color.FromArgb(35, 16, 185, 129)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(70, 16, 185, 129)),
+                BorderThickness = new Thickness(1),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(0, 0, 0, 14)
+            };
+            emptyIconBorder.Child = new TextBlock() {
+                Text = "🎮",
+                FontSize = 28,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            emptyStatePanel.Children.Add(emptyIconBorder);
+
+            txtEmptyTitle = new TextBlock() {
+                Text = "Unlocked Library is Empty",
+                FontSize = 16,
+                FontWeight = FontWeights.Bold,
+                Foreground = new SolidColorBrush(Color.FromRgb(241, 245, 249)),
+                TextAlignment = TextAlignment.Center,
+                Margin = new Thickness(0, 0, 0, 6)
+            };
+            emptyStatePanel.Children.Add(txtEmptyTitle);
+
+            txtEmptySubtitle = new TextBlock() {
+                Text = "Search by game title above, enter an AppID, or quick-add popular titles below:",
+                FontSize = 12.5,
+                Foreground = new SolidColorBrush(Color.FromRgb(148, 163, 184)),
+                TextAlignment = TextAlignment.Center,
+                Margin = new Thickness(0, 0, 0, 18)
+            };
+            emptyStatePanel.Children.Add(txtEmptySubtitle);
+
+            var chipsWrap = new WrapPanel() {
+                HorizontalAlignment = HorizontalAlignment.Center,
+                MaxWidth = 680
+            };
+
+            var popularGames = new Tuple<string, int>[] {
+                Tuple.Create("⚡ Arc Raiders", 1808500),
+                Tuple.Create("⚔️ Elden Ring", 1245620),
+                Tuple.Create("🐒 Black Myth: Wukong", 2358720),
+                Tuple.Create("💥 Helldivers 2", 553850),
+                Tuple.Create("🏎️ Forza Horizon 5", 1551360),
+                Tuple.Create("🤖 Cyberpunk 2077", 1091500)
+            };
+
+            foreach (var item in popularGames)
+            {
+                var chip = new Border() {
+                    Background = new SolidColorBrush(Color.FromArgb(40, 15, 23, 42)),
+                    BorderBrush = new SolidColorBrush(Color.FromArgb(80, 16, 185, 129)),
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(16),
+                    Padding = new Thickness(12, 6, 12, 6),
+                    Margin = new Thickness(4),
+                    Cursor = Cursors.Hand
+                };
+                var chipStack = new StackPanel() { Orientation = Orientation.Horizontal };
+                chipStack.Children.Add(new TextBlock() {
+                    Text = item.Item1,
+                    FontSize = 11.5,
+                    FontWeight = FontWeights.SemiBold,
+                    Foreground = new SolidColorBrush(Color.FromRgb(203, 213, 225))
+                });
+                chip.Child = chipStack;
+
+                int curId = item.Item2;
+                string curName = item.Item1;
+                chip.MouseDown += (s, e) => {
+                    AddGameById(curId, curName);
+                };
+
+                chip.MouseEnter += (s, e) => chip.Background = new SolidColorBrush(Color.FromArgb(80, 16, 185, 129));
+                chip.MouseLeave += (s, e) => chip.Background = new SolidColorBrush(Color.FromArgb(40, 15, 23, 42));
+
+                chipsWrap.Children.Add(chip);
+            }
+            emptyStatePanel.Children.Add(chipsWrap);
+            gamesContainerGrid.Children.Add(emptyStatePanel);
 
             scroll.Content = gamesContainerGrid;
             Grid.SetRow(scroll, 1);
@@ -1328,7 +2262,28 @@ namespace GreenLumaManager
             Grid.SetRow(libraryContainer, 4);
             mainGrid.Children.Add(libraryContainer);
 
-            rootBorder.Child = mainGrid;
+            var rootGrid = new Grid();
+            rootGrid.Children.Add(mainGrid);
+
+            // In-App Frosted Modal Layer (Panel.ZIndex = 3000)
+            inAppModalHost = new Grid() {
+                Background = new SolidColorBrush(Color.FromArgb(195, 6, 9, 16)),
+                Visibility = Visibility.Collapsed
+            };
+            Panel.SetZIndex(inAppModalHost, 3000);
+            rootGrid.Children.Add(inAppModalHost);
+
+            // In-App Toast Notifications Layer (Panel.ZIndex = 4000)
+            toastNotificationHost = new StackPanel() {
+                HorizontalAlignment = HorizontalAlignment.Right,
+                VerticalAlignment = VerticalAlignment.Bottom,
+                Margin = new Thickness(0, 0, 24, 20),
+                IsHitTestVisible = true
+            };
+            Panel.SetZIndex(toastNotificationHost, 4000);
+            rootGrid.Children.Add(toastNotificationHost);
+
+            rootBorder.Child = rootGrid;
             Content = rootBorder;
         }
 
@@ -1421,35 +2376,13 @@ namespace GreenLumaManager
         }
 
         // =========================================================================
-        // --- CLEAN SETTINGS PREFERENCES DIALOG (DEDICATED CONFIGURATION MODAL) ---
+        // --- CLEAN SETTINGS PREFERENCES DIALOG (IN-APP MODAL OVERLAY) ---
         // =========================================================================
         private void OpenSettingsDialog()
         {
             bool isAr = (settings.lang == "ar");
 
-            var win = new Window() {
-                Title = isAr ? "إعدادات وتفضيلات البرنامج" : "GreenLuma Settings & Preferences",
-                Width = 580,
-                Height = 460,
-                WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                Owner = this,
-                Background = new SolidColorBrush(Color.FromRgb(13, 18, 28)),
-                Foreground = new SolidColorBrush(Color.FromRgb(248, 250, 252)),
-                FlowDirection = isAr ? FlowDirection.RightToLeft : FlowDirection.LeftToRight,
-                ResizeMode = ResizeMode.NoResize,
-                WindowStyle = WindowStyle.ToolWindow
-            };
-
-            var sp = new StackPanel() { Margin = new Thickness(22) };
-
-            var txtTitle = new TextBlock() {
-                Text = isAr ? "⚙️ إعدادات وتفضيلات GreenLuma" : "⚙️ GreenLuma Preferences",
-                FontSize = 16,
-                FontWeight = FontWeights.Bold,
-                Foreground = new SolidColorBrush(Color.FromRgb(16, 185, 129)),
-                Margin = new Thickness(0, 0, 0, 16)
-            };
-            sp.Children.Add(txtTitle);
+            var sp = new StackPanel() { Margin = new Thickness(8) };
 
             // 1. Steam Directory Path Row
             sp.Children.Add(new TextBlock() {
@@ -1489,7 +2422,7 @@ namespace GreenLumaManager
                 var dlg = new OpenFileDialog();
                 dlg.Title = isAr ? "اختر ملف steam.exe" : "Select steam.exe in your Steam folder";
                 dlg.Filter = "Steam Executable (steam.exe)|steam.exe";
-                if (dlg.ShowDialog(win) == true)
+                if (dlg.ShowDialog(this) == true)
                 {
                     txtCustomSteam.Text = Path.GetDirectoryName(dlg.FileName);
                 }
@@ -1557,7 +2490,7 @@ namespace GreenLumaManager
                 Cursor = Cursors.Hand,
                 Margin = new Thickness(0, 0, 10, 0)
             };
-            btnCancel.Click += (s, e) => win.Close();
+            btnCancel.Click += (s, e) => CloseInAppModal();
             btnRow.Children.Add(btnCancel);
 
             var btnSave = new Button() {
@@ -1578,17 +2511,15 @@ namespace GreenLumaManager
                 }
                 settings.steamArgs = txtSetArgs.Text.Trim();
                 SaveSettings();
-                win.Close();
-                MessageBox.Show(
+                CloseInAppModal();
+                ShowToast(
                     isAr ? "تم حفظ الإعدادات وتطبيقها بنجاح!" : "Preferences saved and applied successfully!",
-                    isAr ? "تم الحفظ" : "Settings Saved",
-                    MessageBoxButton.OK, MessageBoxImage.Information);
+                    ToastType.Success);
             };
             btnRow.Children.Add(btnSave);
 
             sp.Children.Add(btnRow);
-            win.Content = sp;
-            win.ShowDialog();
+            ShowInAppModal(sp, isAr ? "⚙️ إعدادات وتفضيلات GreenLuma" : "⚙️ GreenLuma Preferences", null, 620);
         }
 
         // ==========================================
@@ -1598,7 +2529,7 @@ namespace GreenLumaManager
         {
             if (string.IsNullOrEmpty(query) || query.Length < 2)
             {
-                if (searchPopup != null) searchPopup.IsOpen = false;
+                CloseSearchOverlay();
                 return;
             }
 
@@ -1691,7 +2622,7 @@ namespace GreenLumaManager
                     Padding = new Thickness(10)
                 };
                 searchResultsPanel.Children.Add(txtNone);
-                searchPopup.IsOpen = true;
+                ShowSearchOverlay();
                 return;
             }
 
@@ -1745,7 +2676,7 @@ namespace GreenLumaManager
                 int rowId = item.id;
                 string rowName = item.name;
                 btnAddRow.Click += (s, e) => {
-                    searchPopup.IsOpen = false;
+                    CloseSearchOverlay();
                     txtGameInput.Text = "";
                     AddGameById(rowId, rowName);
                 };
@@ -1827,7 +2758,7 @@ namespace GreenLumaManager
                 };
 
                 rowBorder.MouseDown += (s, e) => {
-                    searchPopup.IsOpen = false;
+                    CloseSearchOverlay();
                     txtGameInput.Text = "";
                     AddGameById(rowId, rowName);
                 };
@@ -1835,7 +2766,7 @@ namespace GreenLumaManager
                 searchResultsPanel.Children.Add(rowBorder);
             }
 
-            searchPopup.IsOpen = true;
+            ShowSearchOverlay();
         }
 
         private void ToggleLanguage()
@@ -1894,9 +2825,14 @@ namespace GreenLumaManager
             btnToggleAll.Content = isAr ? "🔄 تبديل الكل" : "🔄 Toggle All";
             btnClearAll.Content = isAr ? "🗑 مسح الكل" : "🗑 Clear All";
 
-            txtEmptyState.Text = isAr ? 
-                "لا توجد عناصر مختارة حتى الآن.\nاستخدم شريط البحث بالأعلى للبحث عن أي لعبة بالاسم أو AppID لإضافتها إلى مكتبتك." : 
-                "No games selected yet.\nSearch above by game title or enter AppID to unlock it in your library.";
+            if (btnShareLibrary != null) btnShareLibrary.Content = isAr ? "📋 مشاركة" : "📋 Share";
+            if (btnImportLibrary != null) btnImportLibrary.Content = isAr ? "📥 استيراد" : "📥 Import";
+            if (btnSteamDoctor != null) btnSteamDoctor.Content = isAr ? "🩺 طبيب ستيم" : "🩺 Steam Doctor";
+
+            if (txtEmptyTitle != null) txtEmptyTitle.Text = isAr ? "مكتبتك المفتوحة خالية حالياً" : "Unlocked Library is Empty";
+            if (txtEmptySubtitle != null) txtEmptySubtitle.Text = isAr ? 
+                "ابحث عن أي لعبة أو إضافة بالأعلى، أو أدخل الـ AppID، أو اختر من الألعاب الأكثر طلباً:" : 
+                "Search by game title above, enter an AppID, or quick-add popular titles below:";
 
             UpdateTabButtonStyles();
             UpdateStatusUI();
@@ -1914,11 +2850,11 @@ namespace GreenLumaManager
 
             if (gamesList.Count == 0)
             {
-                txtEmptyState.Visibility = Visibility.Visible;
+                if (emptyStatePanel != null) emptyStatePanel.Visibility = Visibility.Visible;
             }
             else
             {
-                txtEmptyState.Visibility = Visibility.Collapsed;
+                if (emptyStatePanel != null) emptyStatePanel.Visibility = Visibility.Collapsed;
             }
 
             int cardIndex = 0;
@@ -2232,6 +3168,78 @@ namespace GreenLumaManager
             detailsStack.Children.Add(actionRow);
             stack.Children.Add(detailsStack);
             card.Child = stack;
+
+            var cm = new ContextMenu() {
+                Background = new SolidColorBrush(Color.FromRgb(15, 23, 42)),
+                Foreground = new SolidColorBrush(Color.FromRgb(241, 245, 249)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(90, 16, 185, 129)),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(4)
+            };
+
+            var miStore = new MenuItem() {
+                Header = isAr ? "🌐 عرض في متجر Steam" : "🌐 View on Steam Store"
+            };
+            miStore.Click += (s, e) => {
+                try { Process.Start(new ProcessStartInfo("https://store.steampowered.com/app/" + game.appId) { UseShellExecute = true }); } catch { }
+            };
+            cm.Items.Add(miStore);
+
+            var miSteamDb = new MenuItem() {
+                Header = isAr ? "📊 فحص بيانات SteamDB" : "📊 View on SteamDB"
+            };
+            miSteamDb.Click += (s, e) => {
+                try { Process.Start(new ProcessStartInfo("https://steamdb.info/app/" + game.appId) { UseShellExecute = true }); } catch { }
+            };
+            cm.Items.Add(miSteamDb);
+
+            var miCopyId = new MenuItem() {
+                Header = isAr ? "📋 نسخ الـ AppID" : "📋 Copy AppID"
+            };
+            miCopyId.Click += (s, e) => {
+                try {
+                    Clipboard.SetText(game.appId.ToString());
+                    ShowToast(isAr ? ("تم نسخ AppID: " + game.appId) : ("Copied AppID: " + game.appId), ToastType.Success);
+                } catch { }
+            };
+            cm.Items.Add(miCopyId);
+
+            if (!isActuallyDlc)
+            {
+                var miFetchDlc = new MenuItem() {
+                    Header = isAr ? "🧩 جلب وتفعيل كافة الـ DLCs" : "🧩 Fetch & Unlock All DLCs"
+                };
+                miFetchDlc.Click += (s, e) => FetchAndAddDLCs(game.appId, game.name);
+                cm.Items.Add(miFetchDlc);
+            }
+
+            cm.Items.Add(new Separator());
+
+            var miToggle = new MenuItem() {
+                Header = game.enabled ? (isAr ? "⏸️ تعطيل من القائمة" : "⏸️ Disable") : (isAr ? "▶️ تفعيل في القائمة" : "▶️ Enable")
+            };
+            miToggle.Click += (s, e) => {
+                game.enabled = !game.enabled;
+                SaveGames();
+                RenderGamesUI();
+                UpdateStatusUI();
+            };
+            cm.Items.Add(miToggle);
+
+            var miDel = new MenuItem() {
+                Header = isAr ? "🗑️ حذف من القائمة" : "🗑️ Remove from Library",
+                Foreground = new SolidColorBrush(Color.FromRgb(239, 68, 68))
+            };
+            miDel.Click += (s, e) => {
+                gamesList.Remove(game);
+                SaveGames();
+                UpdateTabButtonStyles();
+                RenderGamesUI();
+                ShowToast(isAr ? ("تمت إزالة " + game.name) : ("Removed " + game.name), ToastType.Info);
+            };
+            cm.Items.Add(miDel);
+
+            card.ContextMenu = cm;
 
             return card;
         }
@@ -2807,13 +3815,41 @@ namespace GreenLumaManager
                     File.WriteAllBytes(destDll, dllBytes);
                 }
             }
-            catch (Exception ex)
+            catch
             {
-                MessageBox.Show(
-                    isAr ? ("فشل نسخ وإعادة تسمية user32.dll في مجلد Steam: " + ex.Message) : ("Failed placing and renaming user32.dll in Steam folder: " + ex.Message),
-                    isAr ? "خطأ في الحقن" : "Injection Error",
-                    MessageBoxButton.OK, MessageBoxImage.Error);
-                return false;
+                int killed = KillZombieSteamProcesses();
+                bool healed = false;
+                if (killed > 0)
+                {
+                    try
+                    {
+                        if (File.Exists(destDll)) File.Delete(destDll);
+                        if (File.Exists(tempSfDll)) File.Delete(tempSfDll);
+                        if (isFamilies)
+                        {
+                            File.WriteAllBytes(tempSfDll, dllBytes);
+                            Thread.Sleep(150);
+                            File.Copy(tempSfDll, destDll, true);
+                            try { File.Delete(tempSfDll); } catch { }
+                        }
+                        else
+                        {
+                            File.WriteAllBytes(destDll, dllBytes);
+                        }
+                        healed = true;
+                    }
+                    catch { }
+                }
+
+                if (!healed)
+                {
+                    ShowToast(
+                        isAr ? ("تعذر نسخ user32.dll بسبب قفل الملفات. تم فتح طبيب ستيم للفحص.") :
+                               ("Failed placing user32.dll (file locked). Opening Steam Doctor..."),
+                        ToastType.Error);
+                    OpenSteamDoctorModal();
+                    return false;
+                }
             }
 
             isInjected = true;
@@ -2821,11 +3857,10 @@ namespace GreenLumaManager
 
             if (showSuccessDialog)
             {
-                MessageBox.Show(
-                    isAr ? "✅ تم تجهيز وحقن الملفات بنجاح (AppList و user32.dll)!\n\nالملفات الآن جاهزة 100% داخل مجلد ستيم.\nيمكنك الآن الضغط على زر '🚀 تشغيل ستيم مع GreenLuma' لفتح ستيم." :
-                           "✅ All files injected (AppList & user32.dll prepared successfully)!\n\nFiles are now in Steam directory.\nYou can now launch Steam via '🚀 Launch Steam (GreenLuma)'.",
-                    isAr ? "اكتمل التجهيز والحقن" : "Injection Complete",
-                    MessageBoxButton.OK, MessageBoxImage.Information);
+                ShowToast(
+                    isAr ? "✅ تم تجهيز وحقن الملفات بنجاح في مجلد Steam!" :
+                           "✅ All files injected successfully into Steam folder!",
+                    ToastType.Success);
             }
 
             return true;
@@ -2842,20 +3877,20 @@ namespace GreenLumaManager
 
             if (string.IsNullOrEmpty(steamDir) || !Directory.Exists(steamDir))
             {
-                MessageBox.Show(
+                ShowToast(
                     isAr ? "لم يتم العثور على مجلد Steam! يرجى التأكد من مسار Steam في الإعدادات." : "Steam directory was not found! Please check your path in Settings.",
-                    isAr ? "خطأ في المسار" : "Path Error",
-                    MessageBoxButton.OK, MessageBoxImage.Error);
+                    ToastType.Error);
+                OpenSteamDoctorModal();
                 return;
             }
 
             string steamExe = Path.Combine(steamDir, "steam.exe");
             if (!File.Exists(steamExe))
             {
-                MessageBox.Show(
+                ShowToast(
                     isAr ? ("تعذر العثور على steam.exe في: " + steamDir) : ("Could not find steam.exe at: " + steamDir),
-                    isAr ? "ملف غير موجود" : "File Missing",
-                    MessageBoxButton.OK, MessageBoxImage.Error);
+                    ToastType.Error);
+                OpenSteamDoctorModal();
                 return;
             }
 
@@ -2892,10 +3927,10 @@ namespace GreenLumaManager
             }
             catch (Exception ex)
             {
-                MessageBox.Show(
+                ShowToast(
                     isAr ? ("فشل تشغيل Steam: " + ex.Message) : ("Failed to launch Steam: " + ex.Message),
-                    isAr ? "خطأ في التشغيل" : "Launch Error",
-                    MessageBoxButton.OK, MessageBoxImage.Error);
+                    ToastType.Error);
+                OpenSteamDoctorModal();
                 return;
             }
 
@@ -3002,20 +4037,7 @@ namespace GreenLumaManager
         {
             bool isAr = (settings.lang == "ar");
 
-            var win = new Window() {
-                Title = isAr ? "دليل التشغيل السريع - GreenLuma 2026" : "GreenLuma 2026 - Quick Start Guide",
-                Width = 680,
-                Height = 620,
-                WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                Owner = this,
-                Background = new SolidColorBrush(Color.FromRgb(11, 15, 25)),
-                Foreground = new SolidColorBrush(Color.FromRgb(248, 250, 252)),
-                FlowDirection = isAr ? FlowDirection.RightToLeft : FlowDirection.LeftToRight,
-                ResizeMode = ResizeMode.NoResize,
-                WindowStyle = WindowStyle.ToolWindow
-            };
-
-            var mainDock = new DockPanel() { Margin = new Thickness(24) };
+            var mainDock = new DockPanel() { Margin = new Thickness(4) };
 
             // Bottom Got-It Button
             var btnClose = new Button() {
@@ -3030,7 +4052,7 @@ namespace GreenLumaManager
                 HorizontalAlignment = HorizontalAlignment.Center,
                 Margin = new Thickness(0, 16, 0, 0)
             };
-            btnClose.Click += (s, e) => win.Close();
+            btnClose.Click += (s, e) => CloseInAppModal();
             DockPanel.SetDock(btnClose, Dock.Bottom);
             mainDock.Children.Add(btnClose);
 
@@ -3131,9 +4153,7 @@ namespace GreenLumaManager
 
             scroll.Content = sp;
             mainDock.Children.Add(scroll);
-            win.Content = mainDock;
-
-            win.ShowDialog();
+            ShowInAppModal(mainDock, isAr ? "📖 دليل التشغيل السريع - GreenLuma 2026" : "GreenLuma 2026 - Quick Start Guide", null, 680);
         }
 
         // =========================================================================
@@ -3663,8 +4683,7 @@ namespace GreenLumaManager
 
             scroll.Content = sp;
             mainDock.Children.Add(scroll);
-            win.Content = mainDock;
-            win.ShowDialog();
+            ShowInAppModal(mainDock, isAr ? "📖 دليل الاستخدام والملفات المعتمدة" : "📖 Companion Usage & CS.RIN.RU Guide", null, 680);
         }
 
         private void DetectSteamPath()
@@ -3939,6 +4958,22 @@ namespace GreenLumaManager
             }
 
             RefreshPayloadSourceUI();
+
+            // Active Steam Account Detection
+            DetectActiveSteamAccount();
+            if (accountPillBorder != null)
+            {
+                if (!string.IsNullOrEmpty(activeSteamPersona))
+                {
+                    txtAccountName.Text = activeSteamPersona;
+                    accountPillBorder.Visibility = Visibility.Visible;
+                    accountPillBorder.ToolTip = string.Format("Active Steam User: {0} ({1})", activeSteamPersona, activeSteamAccount);
+                }
+                else
+                {
+                    accountPillBorder.Visibility = Visibility.Collapsed;
+                }
+            }
         }
 
         private void MainWindow_Closing(object sender, System.ComponentModel.CancelEventArgs e)
@@ -3949,12 +4984,44 @@ namespace GreenLumaManager
 
     public static class Program
     {
+        [DllImport("user32.dll")]
+        private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+        private const int SW_RESTORE = 9;
+
         [STAThread]
         public static void Main()
         {
-            var app = new Application();
-            var window = new MainWindow();
-            app.Run(window);
+            bool createdNew;
+            using (Mutex mutex = new Mutex(true, "Global\\GreenLumaStealthManager_SingleInstance_Mutex_v1", out createdNew))
+            {
+                if (!createdNew)
+                {
+                    // Bring existing instance to foreground
+                    try
+                    {
+                        Process current = Process.GetCurrentProcess();
+                        foreach (Process process in Process.GetProcessesByName(current.ProcessName))
+                        {
+                            if (process.Id != current.Id && process.MainWindowHandle != IntPtr.Zero)
+                            {
+                                ShowWindow(process.MainWindowHandle, SW_RESTORE);
+                                SetForegroundWindow(process.MainWindowHandle);
+                                break;
+                            }
+                        }
+                    }
+                    catch { }
+                    return;
+                }
+
+                var app = new Application();
+                var window = new MainWindow();
+                app.Run(window);
+            }
         }
     }
 }
