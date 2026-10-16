@@ -1,0 +1,20 @@
+# Build artifacts
+*.exe
+*.dll
+*.pdb
+
+# Local config & caches
+games.json
+AppList/
+.app_profile/
+__pycache__/
+*.pyc
+
+# Local runtime & test folders
+x86DedicatedServers/
+StealthMode/
+static/
+app.py
+Launch_UI.bat
+Run_GreenLuma.bat
+Run_GreenLuma.ps1

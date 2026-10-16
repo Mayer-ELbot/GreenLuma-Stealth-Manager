@@ -34,17 +34,23 @@ namespace GreenLumaManager
         public bool isDLC { get; set; }
         public int dlcCount { get; set; }
         public bool familyShare { get; set; }
+        public int parentAppId { get; set; }
+        public string parentName { get; set; }
 
         public GameItem()
         {
             familyShare = true;
             enabled = true;
             type = "game";
+            parentAppId = 0;
+            parentName = "";
         }
 
         public bool CheckIsDLC()
         {
             if (isDLC) return true;
+            if (parentAppId > 0) return true;
+            if (!string.IsNullOrEmpty(parentName)) return true;
             if (!string.IsNullOrEmpty(type))
             {
                 string t = type.ToLower();
@@ -55,7 +61,8 @@ namespace GreenLumaManager
                 string lower = name.ToLower();
                 if (lower.Contains(" - dlc") || lower.Contains(" dlc ") || lower.EndsWith(" dlc") ||
                     lower.Contains("expansion") || lower.Contains("season pass") || lower.Contains("upgrade to") ||
-                    lower.Contains("deluxe edition upgrade") || lower.Contains("soundtrack") || lower.Contains(" ost") ||
+                    lower.Contains("deluxe edition upgrade") || lower.Contains("deluxe upgrade") ||
+                    lower.Contains("soundtrack") || lower.Contains(" ost") ||
                     lower.Contains("hunter set") || lower.Contains("reaver set") || lower.Contains("collector set") ||
                     lower.Contains("skin pack") || lower.Contains("costume") || lower.Contains("character pack") ||
                     lower.Contains("bonus content") || lower.Contains("artbook") || lower.Contains("item pack") ||
@@ -78,6 +85,16 @@ namespace GreenLumaManager
         public bool familyShare { get; set; }
     }
 
+    public class InstalledGameInfo
+    {
+        public int appId { get; set; }
+        public string name { get; set; }
+        public string installDir { get; set; }
+        public long sizeBytes { get; set; }
+        public bool isAlreadyAdded { get; set; }
+        public bool isSelected { get; set; }
+    }
+
     public class AppSettings
     {
         public string customSteamPath { get; set; }
@@ -86,6 +103,8 @@ namespace GreenLumaManager
         public string steamArgs { get; set; }
         public string lang { get; set; } // "en" or "ar"
         public bool firstTimeGuideShown { get; set; }
+        public string viewMode { get; set; } // "cards" or "list"
+        public bool isMiniMode { get; set; }
 
         public AppSettings()
         {
@@ -94,12 +113,14 @@ namespace GreenLumaManager
             lang = "en";
             clearAppCache = true;
             firstTimeGuideShown = false;
+            viewMode = "cards";
+            isMiniMode = false;
         }
     }
 
     public class MainWindow : Window
     {
-        public const string CURRENT_VERSION = "v1.5.0";
+        public const string CURRENT_VERSION = "v1.6.0";
         public const string GITHUB_REPO = "Mayer-ELbot/GreenLuma-Stealth-Manager";
 
         [DllImport("user32.dll", SetLastError = true)]
@@ -126,17 +147,27 @@ namespace GreenLumaManager
         private Thread monitorThread = null;
         private DispatcherTimer statusTimer;
 
+        // Dual App Mode & View Mode State
+        private bool isMiniMode = false;
+        private string currentViewMode = "cards";
+        private double savedMainWidth = 1140;
+        private double savedMainHeight = 780;
+        private double savedMainLeft = 100;
+        private double savedMainTop = 100;
+
         // Custom Window Title Bar Controls
         private Border headerBorder;
         private Button btnWinMin;
         private Button btnWinMax;
         private Button btnWinClose;
+        private Button btnModeToggle;
 
         // In-App Toast & Modal Infrastructure (Multi-Monitor Safe)
         private StackPanel toastNotificationHost;
         private Grid inAppModalHost;
 
-        // Active Steam Account Pill
+        // Active Steam Account & Status Pill
+        private Border unifiedStatusPill;
         private Border accountPillBorder;
         private TextBlock txtAccountIcon;
         private TextBlock txtAccountName;
@@ -144,16 +175,12 @@ namespace GreenLumaManager
         private string activeSteamAccount = "";
 
         // Header Controls
+        private Border txtBadgeVer;
         private TextBlock txtLogoSub;
         private TextBlock txtStatus;
         private Border borderStatusDot;
         private Border borderStatusPulseRing;
-        private Button btnSteamDoctor;
-        private Button btnGuide;
         private Button btnSettings;
-        private Button btnLangToggle;
-        private Button btnCheckUpdate;
-        private Button btnCleanAll;
         private Border updateBannerBorder;
         private TextBlock txtUpdateBanner;
         private Button btnUpdateBanner;
@@ -165,15 +192,14 @@ namespace GreenLumaManager
         private List<KeyValuePair<string, string>> pendingOtherAssets = new List<KeyValuePair<string, string>>();
 
         // Control Deck (Streamlined 1-Click Launch & Stealth Actions)
+        private Border badgeStealthMode;
         private TextBlock txtStealthMode;
         private Button btnToggleClearCache;
-        private Button btnRunAppCache;
         private Button btnInjectFiles;
         private Button btnLaunch;
         private Button btnStop;
         private TextBlock lblTelemetryUnlocked;
         private TextBlock lblTelemetrySource;
-        private Button btnDeckSettings;
 
         // Search Command Deck (100% In-App Overlay, Replaces Floating Win32 Popup)
         private Border searchContainer;
@@ -188,6 +214,7 @@ namespace GreenLumaManager
         private TextBlock lblSearchPopupTitle;
         private DispatcherTimer searchDebounceTimer;
         private List<SearchResultItem> lastSearchResults = new List<SearchResultItem>();
+        private int lastAddedAppId = 0;
 
         // Library & Filter Tabs
         private TextBlock lblLibraryTitle;
@@ -200,10 +227,26 @@ namespace GreenLumaManager
         private Button btnImportLibrary;
         private Button btnToggleAll;
         private Button btnClearAll;
+        private Button btnViewCards;
+        private Button btnViewList;
         private WrapPanel gamesWrapPanel;
+        private StackPanel gamesListStack;
         private StackPanel emptyStatePanel;
         private TextBlock txtEmptyTitle;
         private TextBlock txtEmptySubtitle;
+
+        // Mode Containers
+        private Grid mainContentGrid;
+        private Grid miniContentGrid;
+        private StackPanel miniGamesStack;
+        private TextBox txtMiniSearch;
+        private Button btnMiniAdd;
+        private Button btnMiniLaunch;
+        private Button btnMiniStop;
+        private TextBlock lblMiniStatus;
+        private Button btnMiniDoctor;
+        private Button btnMiniSettings;
+        private Button btnMiniLang;
 
         private static readonly int[] DEFAULT_SLOTS = new int[] {
             90, 205, 219, 310, 410, 570, 575, 635, 640, 740, 1213, 1273, 1840, 2145, 2403, 4270, 4940, 
@@ -225,13 +268,14 @@ namespace GreenLumaManager
         {
             appDir = AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\');
             Title = "GreenLuma 2026 - Stealth Pro Hub (Standalone Edition)";
-            Width = 1200;
-            Height = 860;
-            MinWidth = 1000;
-            MinHeight = 720;
+            Width = 1140;
+            Height = 780;
+            MinWidth = 760;
+            MinHeight = 540;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
             Background = new SolidColorBrush(Color.FromRgb(10, 13, 20)); // #0A0D14
             Foreground = new SolidColorBrush(Color.FromRgb(248, 250, 252));
+            this.SizeChanged += MainWindow_SizeChanged;
 
             // Custom Frameless Window without white borders or grip
             WindowStyle = WindowStyle.None;
@@ -269,6 +313,15 @@ namespace GreenLumaManager
                     else if (searchOverlayBorder != null && searchOverlayBorder.Visibility == Visibility.Visible)
                     {
                         CloseSearchOverlay();
+                        e.Handled = true;
+                    }
+                }
+                else if (e.Key == Key.F && (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
+                {
+                    if (txtFilterInput != null && txtFilterInput.IsVisible)
+                    {
+                        txtFilterInput.Focus();
+                        txtFilterInput.SelectAll();
                         e.Handled = true;
                     }
                 }
@@ -683,14 +736,70 @@ namespace GreenLumaManager
 
         public void ShowSearchOverlay()
         {
-            if (searchOverlayBorder != null) searchOverlayBorder.Visibility = Visibility.Visible;
-            if (searchDismissBackdrop != null) searchDismissBackdrop.Visibility = Visibility.Visible;
+            if (searchOverlayBorder != null)
+            {
+                searchOverlayBorder.Visibility = Visibility.Visible;
+                var tg = searchOverlayBorder.RenderTransform as TransformGroup;
+                if (tg == null)
+                {
+                    tg = new TransformGroup();
+                    tg.Children.Add(new ScaleTransform(1.0, 1.0));
+                    tg.Children.Add(new TranslateTransform(0, 0));
+                    searchOverlayBorder.RenderTransformOrigin = new Point(0.5, 0.0);
+                    searchOverlayBorder.RenderTransform = tg;
+                }
+                var st = tg.Children[0] as ScaleTransform;
+                var tt = tg.Children[1] as TranslateTransform;
+
+                if (st != null)
+                {
+                    st.ScaleY = 0.92;
+                    st.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(0.92, 1.0, TimeSpan.FromMilliseconds(180)) { DecelerationRatio = 0.6 });
+                }
+                if (tt != null)
+                {
+                    tt.Y = -18;
+                    tt.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(-18, 0, TimeSpan.FromMilliseconds(180)) { DecelerationRatio = 0.6 });
+                }
+
+                searchOverlayBorder.Opacity = 0.0;
+                searchOverlayBorder.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(0.0, 1.0, TimeSpan.FromMilliseconds(160)));
+            }
+
+            if (searchDismissBackdrop != null)
+            {
+                searchDismissBackdrop.Visibility = Visibility.Visible;
+                searchDismissBackdrop.Opacity = 0.0;
+                searchDismissBackdrop.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(0.0, 0.5, TimeSpan.FromMilliseconds(160)));
+            }
         }
 
         public void CloseSearchOverlay()
         {
-            if (searchOverlayBorder != null) searchOverlayBorder.Visibility = Visibility.Collapsed;
-            if (searchDismissBackdrop != null) searchDismissBackdrop.Visibility = Visibility.Collapsed;
+            if (searchOverlayBorder != null && searchOverlayBorder.Visibility == Visibility.Visible)
+            {
+                var tg = searchOverlayBorder.RenderTransform as TransformGroup;
+                TranslateTransform tt = (tg != null && tg.Children.Count > 1) ? tg.Children[1] as TranslateTransform : null;
+                if (tt != null)
+                {
+                    tt.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(0, -12, TimeSpan.FromMilliseconds(110)) { AccelerationRatio = 0.5 });
+                }
+
+                var daOp = new DoubleAnimation(1.0, 0.0, TimeSpan.FromMilliseconds(110));
+                daOp.Completed += (s, e) => {
+                    searchOverlayBorder.Visibility = Visibility.Collapsed;
+                };
+                searchOverlayBorder.BeginAnimation(UIElement.OpacityProperty, daOp);
+            }
+
+            if (searchDismissBackdrop != null && searchDismissBackdrop.Visibility == Visibility.Visible)
+            {
+                var daBackdrop = new DoubleAnimation(0.5, 0.0, TimeSpan.FromMilliseconds(110));
+                daBackdrop.Completed += (s, e) => {
+                    searchDismissBackdrop.Visibility = Visibility.Collapsed;
+                };
+                searchDismissBackdrop.BeginAnimation(UIElement.OpacityProperty, daBackdrop);
+            }
         }
 
         private void DetectActiveSteamAccount()
@@ -1211,12 +1320,10 @@ namespace GreenLumaManager
             var mainGrid = new Grid();
             mainGrid.RowDefinitions.Add(new RowDefinition() { Height = GridLength.Auto }); // 0: Top Header / Custom Title Bar
             mainGrid.RowDefinitions.Add(new RowDefinition() { Height = GridLength.Auto }); // 1: Update Banner
-            mainGrid.RowDefinitions.Add(new RowDefinition() { Height = GridLength.Auto }); // 2: Control Deck (Launch & Modes)
-            mainGrid.RowDefinitions.Add(new RowDefinition() { Height = GridLength.Auto }); // 3: VIP Search Command Bar
-            mainGrid.RowDefinitions.Add(new RowDefinition() { Height = new GridLength(1, GridUnitType.Star) }); // 4: Selected Library & DLCs
+            mainGrid.RowDefinitions.Add(new RowDefinition() { Height = new GridLength(1, GridUnitType.Star) }); // 2: Active Mode Host (Full or Mini)
 
             // =========================================================================
-            // --- 0. 3-COLUMN NON-OVERLAPPING CUSTOM TITLE BAR & TOP HEADER ---
+            // --- 0. 3-COLUMN ZERO-COLLISION CUSTOM TITLE BAR & TOP HEADER ---
             // =========================================================================
             headerBorder = new Border() {
                 Background = new SolidColorBrush(Color.FromRgb(12, 16, 24)),
@@ -1228,7 +1335,7 @@ namespace GreenLumaManager
             headerBorder.MouseDown += (s, e) => {
                 if (e.ChangedButton == MouseButton.Left)
                 {
-                    if (e.ClickCount == 2)
+                    if (e.ClickCount == 2 && !isMiniMode)
                     {
                         ToggleMaximize();
                     }
@@ -1248,8 +1355,8 @@ namespace GreenLumaManager
             var logoStack = new StackPanel() { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
             var imgLogo = new Image() {
                 Source = this.Icon,
-                Width = 24,
-                Height = 24,
+                Width = 22,
+                Height = 22,
                 Margin = new Thickness(0, 0, 8, 0),
                 VerticalAlignment = VerticalAlignment.Center
             };
@@ -1257,12 +1364,12 @@ namespace GreenLumaManager
 
             var txtLogo = new TextBlock() {
                 Text = "GREENLUMA 2026",
-                FontSize = 19,
+                FontSize = 17,
                 FontWeight = FontWeights.ExtraBold,
                 Foreground = new SolidColorBrush(Color.FromRgb(16, 185, 129)),
                 VerticalAlignment = VerticalAlignment.Center
             };
-            var txtBadgeVer = new Border() {
+            txtBadgeVer = new Border() {
                 Background = new SolidColorBrush(Color.FromArgb(40, 16, 185, 129)),
                 BorderBrush = new SolidColorBrush(Color.FromArgb(80, 16, 185, 129)),
                 BorderThickness = new Thickness(1),
@@ -1275,7 +1382,7 @@ namespace GreenLumaManager
 
             txtLogoSub = new TextBlock() {
                 Text = "STEALTH HUB",
-                FontSize = 11,
+                FontSize = 10.5,
                 FontWeight = FontWeights.SemiBold,
                 Foreground = new SolidColorBrush(Color.FromRgb(100, 116, 139)),
                 VerticalAlignment = VerticalAlignment.Center
@@ -1286,23 +1393,18 @@ namespace GreenLumaManager
             Grid.SetColumn(logoStack, 0);
             headerGrid.Children.Add(logoStack);
 
-            // Col 1: Center Live Status Radar Pill (Never overlaps!)
-            // Col 1: Center Live Status Radar Pill & Active Steam Account Pill
-            var centerPillsStack = new StackPanel() {
-                Orientation = Orientation.Horizontal,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center
-            };
-
-            var statusPillBorder = new Border() {
+            // Col 1: Center Live Unified Status & Active Steam Account Pill (Zero Overlap Guaranteed!)
+            unifiedStatusPill = new Border() {
                 Background = new SolidColorBrush(Color.FromArgb(50, 15, 23, 42)),
                 BorderBrush = new SolidColorBrush(Color.FromArgb(60, 255, 255, 255)),
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(16),
-                Padding = new Thickness(12, 4, 14, 4),
-                VerticalAlignment = VerticalAlignment.Center
+                Padding = new Thickness(14, 5, 14, 5),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                Cursor = Cursors.Hand
             };
-            var statusPillStack = new StackPanel() { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+            var unifiedPillStack = new StackPanel() { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
 
             var dotContainer = new Grid() { Width = 14, Height = 14, Margin = new Thickness(0, 0, 8, 0) };
             borderStatusPulseRing = new Border() {
@@ -1322,155 +1424,116 @@ namespace GreenLumaManager
             };
             dotContainer.Children.Add(borderStatusPulseRing);
             dotContainer.Children.Add(borderStatusDot);
-            statusPillStack.Children.Add(dotContainer);
+            unifiedPillStack.Children.Add(dotContainer);
 
             txtStatus = new TextBlock() {
                 Text = "Steam Inactive",
-                FontSize = 11.5,
+                FontSize = 11,
                 FontWeight = FontWeights.Bold,
                 Foreground = new SolidColorBrush(Color.FromRgb(241, 245, 249)),
-                VerticalAlignment = VerticalAlignment.Center
-            };
-            statusPillStack.Children.Add(txtStatus);
-            statusPillBorder.Child = statusPillStack;
-            centerPillsStack.Children.Add(statusPillBorder);
-
-            // Active Steam Account Pill
-            accountPillBorder = new Border() {
-                Background = new SolidColorBrush(Color.FromArgb(50, 15, 23, 42)),
-                BorderBrush = new SolidColorBrush(Color.FromArgb(70, 6, 182, 212)),
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(16),
-                Padding = new Thickness(10, 4, 12, 4),
-                Margin = new Thickness(8, 0, 0, 0),
                 VerticalAlignment = VerticalAlignment.Center,
-                Cursor = Cursors.Hand,
+                TextTrimming = TextTrimming.None
+            };
+            unifiedPillStack.Children.Add(txtStatus);
+
+            accountPillBorder = new Border() {
+                Margin = new Thickness(6, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center,
                 Visibility = Visibility.Collapsed
             };
             var accountStack = new StackPanel() { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-            txtAccountIcon = new TextBlock() { Text = "👤", FontSize = 11, Margin = new Thickness(0, 0, 6, 0) };
+            var txtDivider = new TextBlock() {
+                Text = "·",
+                FontSize = 12,
+                FontWeight = FontWeights.Bold,
+                Foreground = new SolidColorBrush(Color.FromArgb(120, 255, 255, 255)),
+                Margin = new Thickness(0, 0, 6, 0),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            accountStack.Children.Add(txtDivider);
+            txtAccountIcon = new TextBlock() { Text = "👤", FontSize = 11, Margin = new Thickness(0, 0, 4, 0), VerticalAlignment = VerticalAlignment.Center };
             txtAccountName = new TextBlock() {
                 Text = "Steam User",
                 FontSize = 11,
                 FontWeight = FontWeights.SemiBold,
-                Foreground = new SolidColorBrush(Color.FromRgb(203, 213, 225))
+                Foreground = new SolidColorBrush(Color.FromRgb(103, 232, 249)),
+                VerticalAlignment = VerticalAlignment.Center,
+                MaxWidth = 95,
+                TextTrimming = TextTrimming.CharacterEllipsis
             };
             accountStack.Children.Add(txtAccountIcon);
             accountStack.Children.Add(txtAccountName);
             accountPillBorder.Child = accountStack;
-            accountPillBorder.MouseDown += (s, e) => {
+            unifiedPillStack.Children.Add(accountPillBorder);
+
+            unifiedStatusPill.Child = unifiedPillStack;
+            unifiedStatusPill.MouseDown += (s, e) => {
                 bool isAr = (settings.lang == "ar");
-                ShowToast(
-                    isAr ? string.Format("الحساب النشط في ستيم: {0} ({1})", activeSteamPersona, activeSteamAccount) :
-                           string.Format("Active Steam Account: {0} ({1})", activeSteamPersona, activeSteamAccount),
-                    ToastType.Info
-                );
+                if (!string.IsNullOrEmpty(activeSteamPersona))
+                {
+                    ShowToast(
+                        isAr ? string.Format("الحساب النشط في ستيم: {0} ({1})", activeSteamPersona, activeSteamAccount) :
+                               string.Format("Active Steam Account: {0} ({1})", activeSteamPersona, activeSteamAccount),
+                        ToastType.Info
+                    );
+                }
+                else
+                {
+                    ShowToast(
+                        isAr ? "ستيم غير نشط أو لم يتم تسجيل الدخول بعد" :
+                               "Steam is inactive or no active user detected",
+                        ToastType.Info
+                    );
+                }
             };
-            centerPillsStack.Children.Add(accountPillBorder);
 
-            Grid.SetColumn(centerPillsStack, 1);
-            headerGrid.Children.Add(centerPillsStack);
+            Grid.SetColumn(unifiedStatusPill, 1);
+            headerGrid.Children.Add(unifiedStatusPill);
 
-            // Col 2: Action Buttons & Custom Window Controls
+            // Col 2: Mode Toggle, Settings & Custom Window Controls
             var rightHeaderStack = new StackPanel() { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
 
-            btnSteamDoctor = new Button() {
-                Content = "🩺 Steam Doctor",
-                Background = new SolidColorBrush(Color.FromArgb(45, 6, 182, 212)),
+            btnModeToggle = new Button() {
+                Content = "⛶ Mini",
+                ToolTip = "Switch between Main Window & Compact Tray Widget",
+                Background = new SolidColorBrush(Color.FromArgb(35, 6, 182, 212)),
                 Foreground = new SolidColorBrush(Color.FromRgb(103, 232, 249)),
                 BorderBrush = new SolidColorBrush(Color.FromArgb(80, 6, 182, 212)),
                 BorderThickness = new Thickness(1),
-                Padding = new Thickness(9, 4, 9, 4),
+                Padding = new Thickness(10, 4, 10, 4),
                 Cursor = Cursors.Hand,
-                Margin = new Thickness(0, 0, 6, 0)
+                Margin = new Thickness(0, 0, 8, 0)
             };
-            btnSteamDoctor.Click += (s, e) => OpenSteamDoctorModal();
-            rightHeaderStack.Children.Add(btnSteamDoctor);
-
-            btnGuide = new Button() {
-                Content = "📖 Guide",
-                Background = new SolidColorBrush(Color.FromArgb(40, 16, 185, 129)),
-                Foreground = new SolidColorBrush(Color.FromRgb(110, 231, 183)),
-                BorderBrush = new SolidColorBrush(Color.FromArgb(70, 16, 185, 129)),
-                BorderThickness = new Thickness(1),
-                Padding = new Thickness(9, 4, 9, 4),
-                Cursor = Cursors.Hand,
-                Margin = new Thickness(0, 0, 6, 0)
-            };
-            btnGuide.Click += (s, e) => OpenQuickGuideDialog();
-            rightHeaderStack.Children.Add(btnGuide);
+            AttachTactilePress(btnModeToggle);
+            btnModeToggle.Click += (s, e) => ApplyAppMode(!isMiniMode);
+            rightHeaderStack.Children.Add(btnModeToggle);
 
             btnSettings = new Button() {
                 Content = "⚙️ Settings",
-                Background = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)),
+                ToolTip = "Settings & Utilities Hub",
+                Background = new SolidColorBrush(Color.FromArgb(28, 255, 255, 255)),
                 Foreground = new SolidColorBrush(Color.FromRgb(226, 232, 240)),
-                BorderBrush = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)),
-                BorderThickness = new Thickness(1),
-                Padding = new Thickness(9, 4, 9, 4),
-                Cursor = Cursors.Hand,
-                Margin = new Thickness(0, 0, 6, 0)
-            };
-            btnSettings.Click += (s, e) => OpenSettingsDialog();
-            rightHeaderStack.Children.Add(btnSettings);
-
-            btnLangToggle = new Button() {
-                Content = "🌐 EN | العربية",
-                Background = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)),
-                Foreground = new SolidColorBrush(Color.FromRgb(226, 232, 240)),
-                BorderBrush = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)),
-                BorderThickness = new Thickness(1),
-                Padding = new Thickness(9, 4, 9, 4),
-                Cursor = Cursors.Hand,
-                Margin = new Thickness(0, 0, 6, 0)
-            };
-            btnLangToggle.Click += (s, e) => ToggleLanguage();
-            rightHeaderStack.Children.Add(btnLangToggle);
-
-            btnCheckUpdate = new Button() {
-                Content = "🔄 Update",
-                Background = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)),
-                Foreground = new SolidColorBrush(Color.FromRgb(226, 232, 240)),
-                BorderBrush = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)),
-                BorderThickness = new Thickness(1),
-                Padding = new Thickness(9, 4, 9, 4),
-                Cursor = Cursors.Hand,
-                Margin = new Thickness(0, 0, 6, 0)
-            };
-            btnCheckUpdate.Click += (s, e) => CheckForUpdatesAsync(true);
-            rightHeaderStack.Children.Add(btnCheckUpdate);
-
-            btnCleanAll = new Button() {
-                Content = "🧹 Clean Steam",
-                Background = new SolidColorBrush(Color.FromArgb(40, 239, 68, 68)),
-                Foreground = new SolidColorBrush(Color.FromRgb(248, 113, 113)),
-                BorderBrush = new SolidColorBrush(Color.FromArgb(80, 239, 68, 68)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(45, 255, 255, 255)),
                 BorderThickness = new Thickness(1),
                 Padding = new Thickness(10, 4, 10, 4),
                 Cursor = Cursors.Hand,
                 Margin = new Thickness(0, 0, 10, 0)
             };
-            btnCleanAll.Click += (s, e) => PurgeAllArtifacts();
-            rightHeaderStack.Children.Add(btnCleanAll);
+            AttachTactilePress(btnSettings);
+            btnSettings.Click += (s, e) => OpenSettingsDialog();
+            rightHeaderStack.Children.Add(btnSettings);
 
             // Min / Max / Close Window Buttons
             var winControlsStack = new StackPanel() { Orientation = Orientation.Horizontal };
             btnWinMin = new Button() {
                 Content = "─",
                 FontSize = 13,
-                Width = 34,
+                Width = 32,
                 Height = 28,
                 Background = Brushes.Transparent,
                 Foreground = new SolidColorBrush(Color.FromRgb(148, 163, 184)),
                 BorderThickness = new Thickness(0),
                 Cursor = Cursors.Hand
-            };
-            btnWinMin.MouseEnter += (s, e) => {
-                btnWinMin.Background = new SolidColorBrush(Color.FromArgb(60, 255, 255, 255));
-                btnWinMin.Foreground = new SolidColorBrush(Color.FromRgb(255, 255, 255));
-            };
-            btnWinMin.MouseLeave += (s, e) => {
-                btnWinMin.Background = Brushes.Transparent;
-                btnWinMin.Foreground = new SolidColorBrush(Color.FromRgb(148, 163, 184));
             };
             btnWinMin.Click += (s, e) => WindowState = WindowState.Minimized;
             winControlsStack.Children.Add(btnWinMin);
@@ -1478,20 +1541,12 @@ namespace GreenLumaManager
             btnWinMax = new Button() {
                 Content = "□",
                 FontSize = 14,
-                Width = 34,
+                Width = 32,
                 Height = 28,
                 Background = Brushes.Transparent,
                 Foreground = new SolidColorBrush(Color.FromRgb(148, 163, 184)),
                 BorderThickness = new Thickness(0),
                 Cursor = Cursors.Hand
-            };
-            btnWinMax.MouseEnter += (s, e) => {
-                btnWinMax.Background = new SolidColorBrush(Color.FromArgb(60, 255, 255, 255));
-                btnWinMax.Foreground = new SolidColorBrush(Color.FromRgb(255, 255, 255));
-            };
-            btnWinMax.MouseLeave += (s, e) => {
-                btnWinMax.Background = Brushes.Transparent;
-                btnWinMax.Foreground = new SolidColorBrush(Color.FromRgb(148, 163, 184));
             };
             btnWinMax.Click += (s, e) => ToggleMaximize();
             winControlsStack.Children.Add(btnWinMax);
@@ -1499,7 +1554,7 @@ namespace GreenLumaManager
             btnWinClose = new Button() {
                 Content = "✕",
                 FontSize = 13,
-                Width = 38,
+                Width = 36,
                 Height = 28,
                 Background = Brushes.Transparent,
                 Foreground = new SolidColorBrush(Color.FromRgb(148, 163, 184)),
@@ -1601,91 +1656,119 @@ namespace GreenLumaManager
             mainGrid.Children.Add(updateBannerBorder);
 
             // =========================================================================
-            // --- 2. STREAMLINED CONTROL DECK (TIERED 2-ROW DESIGN, ZERO OVERLAP) ---
+            // --- 2. DUAL MODE HOSTS: FULL DASHBOARD & COMPACT TRAY FLYOUT ---
             // =========================================================================
-            var controlBorder = new Border() {
-                Background = new SolidColorBrush(Color.FromRgb(14, 19, 30)),
-                BorderBrush = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)),
+            mainContentGrid = new Grid();
+            mainContentGrid.RowDefinitions.Add(new RowDefinition() { Height = GridLength.Auto }); // Row 0: Hero Command Deck
+            mainContentGrid.RowDefinitions.Add(new RowDefinition() { Height = new GridLength(1, GridUnitType.Star) }); // Row 1: Library Container
+            Grid.SetRow(mainContentGrid, 2);
+            mainGrid.Children.Add(mainContentGrid);
+
+            // =========================================================================
+            // --- HERO COMMAND DECK (2-TIER CLEAN ARCHITECTURE, ZERO COLLISION) ---
+            // =========================================================================
+            var heroCommandDeck = new Border() {
+                Background = new SolidColorBrush(Color.FromRgb(13, 18, 27)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(45, 255, 255, 255)),
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(12),
-                Margin = new Thickness(20, 10, 20, 8),
-                Padding = new Thickness(16, 12, 16, 14)
+                Margin = new Thickness(20, 8, 20, 8),
+                Padding = new Thickness(14, 12, 14, 12)
             };
 
-            var deckStack = new StackPanel();
+            var deckMainStack = new StackPanel();
 
-            // --- TIER 1: OPTIONS & TELEMETRY STRIP ---
-            var tier1Grid = new Grid();
-            tier1Grid.ColumnDefinitions.Add(new ColumnDefinition() { Width = new GridLength(1, GridUnitType.Star) }); // Left: Mode Pills & Cache Toggle
-            tier1Grid.ColumnDefinitions.Add(new ColumnDefinition() { Width = GridLength.Auto }); // Right: Telemetry & Settings
+            // ---------------------------------------------------------
+            // Tier 1: Action Command Bar & Telemetry Strip (No Search!)
+            // ---------------------------------------------------------
+            // ---------------------------------------------------------
+            // Tier 1: Action Command Bar & Telemetry Strip (Priority 1 Action Grid)
+            // ---------------------------------------------------------
+            var deckTopGrid = new Grid();
+            deckTopGrid.ColumnDefinitions.Add(new ColumnDefinition() { Width = GridLength.Auto }); // Col 0: Actions (Always 100% full width, never squeezed!)
+            deckTopGrid.ColumnDefinitions.Add(new ColumnDefinition() { Width = new GridLength(1, GridUnitType.Star) }); // Col 1: Telemetry (flex)
 
-            // Left: Stealth Engine Badge + Cache Toggle + Quick Wipe Tool
-            var optionsStack = new StackPanel() { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+            // Left: Action Stack (Launch, Inject, Stop)
+            var leftActionStack = new StackPanel() { 
+                Orientation = Orientation.Horizontal, 
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Left
+            };
 
-            var badgeStealthMode = new Border() {
-                Background = new SolidColorBrush(Color.FromArgb(35, 6, 182, 212)),
-                BorderBrush = new SolidColorBrush(Color.FromArgb(80, 6, 182, 212)),
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(6),
-                Padding = new Thickness(10, 4, 10, 4),
+            btnLaunch = new Button() {
+                Content = "🚀 تشغيل ستيم",
+                Background = new SolidColorBrush(Color.FromRgb(16, 185, 129)),
+                Foreground = new SolidColorBrush(Color.FromRgb(5, 15, 10)),
+                FontWeight = FontWeights.ExtraBold,
+                FontSize = 13,
+                Padding = new Thickness(16, 8, 16, 8),
                 Margin = new Thickness(0, 0, 8, 0),
-                VerticalAlignment = VerticalAlignment.Center
+                BorderThickness = new Thickness(0),
+                Cursor = Cursors.Hand
             };
-            txtStealthMode = new TextBlock() {
-                Text = "🛡️ Stealth Engine (user32SF)",
-                FontSize = 11.5,
-                FontWeight = FontWeights.Bold,
-                Foreground = new SolidColorBrush(Color.FromRgb(103, 232, 249))
+            btnLaunch.Effect = new DropShadowEffect() {
+                Color = Color.FromRgb(16, 185, 129),
+                BlurRadius = 14,
+                ShadowDepth = 0,
+                Opacity = 0.7
             };
-            badgeStealthMode.Child = txtStealthMode;
-            optionsStack.Children.Add(badgeStealthMode);
+            AttachTactilePress(btnLaunch);
+            btnLaunch.Click += (s, e) => ExecuteSmartLaunch();
+            leftActionStack.Children.Add(btnLaunch);
 
-            btnToggleClearCache = new Button() {
-                Content = "🔥 مسح الكاش التلقائي: مفعل",
-                FontSize = 11,
+            btnInjectFiles = new Button() {
+                Content = "📦 تجهيز الملفات",
+                Background = new SolidColorBrush(Color.FromArgb(35, 2, 132, 199)),
+                Foreground = new SolidColorBrush(Color.FromRgb(125, 211, 252)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(80, 2, 132, 199)),
+                BorderThickness = new Thickness(1),
                 FontWeight = FontWeights.SemiBold,
-                Padding = new Thickness(10, 4, 10, 4),
-                BorderThickness = new Thickness(1),
+                FontSize = 11.5,
+                Padding = new Thickness(12, 7, 12, 7),
+                Margin = new Thickness(0, 0, 8, 0),
+                Cursor = Cursors.Hand
+            };
+            AttachTactilePress(btnInjectFiles);
+            btnInjectFiles.Click += (s, e) => InjectFilesOnly(true);
+            leftActionStack.Children.Add(btnInjectFiles);
+
+            btnStop = new Button() {
+                Content = "🛑 إيقاف وحذف",
+                Background = new SolidColorBrush(Color.FromRgb(239, 68, 68)),
+                Foreground = new SolidColorBrush(Color.FromRgb(255, 255, 255)),
+                FontWeight = FontWeights.Bold,
+                FontSize = 11.5,
+                Padding = new Thickness(12, 7, 12, 7),
+                Margin = new Thickness(0, 0, 8, 0),
+                BorderThickness = new Thickness(0),
                 Cursor = Cursors.Hand,
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 0, 8, 0)
+                Visibility = Visibility.Collapsed
             };
-            btnToggleClearCache.Click += (s, e) => {
-                settings.clearAppCache = !settings.clearAppCache;
-                SaveSettings();
-                UpdateClearCacheButton();
+            btnStop.Effect = new DropShadowEffect() {
+                Color = Color.FromRgb(239, 68, 68),
+                BlurRadius = 12,
+                ShadowDepth = 0,
+                Opacity = 0.7
             };
-            optionsStack.Children.Add(btnToggleClearCache);
+            AttachTactilePress(btnStop);
+            btnStop.Click += (s, e) => StopSteamSession();
+            leftActionStack.Children.Add(btnStop);
 
-            btnRunAppCache = new Button() {
-                Content = "🧹 مسح الكاش الآن",
-                FontSize = 11,
-                Background = new SolidColorBrush(Color.FromArgb(25, 255, 255, 255)),
-                Foreground = new SolidColorBrush(Color.FromRgb(203, 213, 225)),
-                BorderBrush = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)),
-                BorderThickness = new Thickness(1),
-                Padding = new Thickness(8, 4, 8, 4),
-                Cursor = Cursors.Hand,
-                VerticalAlignment = VerticalAlignment.Center
-            };
-            btnRunAppCache.Click += (s, e) => ExecuteManualDeleteAppCache();
-            optionsStack.Children.Add(btnRunAppCache);
+            Grid.SetColumn(leftActionStack, 0);
+            deckTopGrid.Children.Add(leftActionStack);
 
-            Grid.SetColumn(optionsStack, 0);
-            tier1Grid.Children.Add(optionsStack);
-
-            // Right: Telemetry Badges & Settings Button
-            var rightCtrl = new StackPanel() {
-                Orientation = Orientation.Horizontal,
-                VerticalAlignment = VerticalAlignment.Center,
-                HorizontalAlignment = HorizontalAlignment.Right
+            // Right: Telemetry & Status Badges (Col 1, right-aligned)
+            var telemetryRight = new StackPanel() { 
+                Orientation = Orientation.Horizontal, 
+                HorizontalAlignment = HorizontalAlignment.Right, 
+                VerticalAlignment = VerticalAlignment.Center 
             };
 
             var badgeUnlocked = new Border() {
-                Background = new SolidColorBrush(Color.FromArgb(40, 16, 185, 129)),
-                BorderBrush = new SolidColorBrush(Color.FromArgb(80, 16, 185, 129)),
+                Background = new SolidColorBrush(Color.FromArgb(35, 16, 185, 129)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(70, 16, 185, 129)),
                 BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(6),
+                CornerRadius = new CornerRadius(5),
                 Padding = new Thickness(8, 4, 8, 4),
                 Margin = new Thickness(0, 0, 6, 0),
                 VerticalAlignment = VerticalAlignment.Center
@@ -1697,211 +1780,105 @@ namespace GreenLumaManager
                 Foreground = new SolidColorBrush(Color.FromRgb(110, 231, 183))
             };
             badgeUnlocked.Child = lblTelemetryUnlocked;
-            rightCtrl.Children.Add(badgeUnlocked);
+            telemetryRight.Children.Add(badgeUnlocked);
 
-            var badgeSource = new Border() {
-                Background = new SolidColorBrush(Color.FromArgb(30, 15, 23, 42)),
-                BorderBrush = new SolidColorBrush(Color.FromArgb(50, 255, 255, 255)),
+            badgeStealthMode = new Border() {
+                Background = new SolidColorBrush(Color.FromArgb(35, 6, 182, 212)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(80, 6, 182, 212)),
                 BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(6),
+                CornerRadius = new CornerRadius(5),
                 Padding = new Thickness(8, 4, 8, 4),
                 Margin = new Thickness(0, 0, 6, 0),
                 VerticalAlignment = VerticalAlignment.Center
             };
-            lblTelemetrySource = new TextBlock() {
-                Text = "🛡️ Core",
+            txtStealthMode = new TextBlock() {
+                Text = "🛡️ user32SF",
                 FontSize = 11,
-                Foreground = new SolidColorBrush(Color.FromRgb(148, 163, 184))
+                FontWeight = FontWeights.Bold,
+                Foreground = new SolidColorBrush(Color.FromRgb(103, 232, 249))
             };
-            badgeSource.Child = lblTelemetrySource;
-            rightCtrl.Children.Add(badgeSource);
+            lblTelemetrySource = txtStealthMode;
+            badgeStealthMode.Child = txtStealthMode;
+            telemetryRight.Children.Add(badgeStealthMode);
 
-            btnDeckSettings = new Button() {
-                Content = "⚙️ Configure",
+            btnToggleClearCache = new Button() {
+                Content = "🔥 مسح الكاش: مفعّل",
                 FontSize = 11,
-                Background = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)),
-                Foreground = new SolidColorBrush(Color.FromRgb(226, 232, 240)),
-                BorderBrush = new SolidColorBrush(Color.FromArgb(50, 255, 255, 255)),
-                BorderThickness = new Thickness(1),
+                FontWeight = FontWeights.SemiBold,
                 Padding = new Thickness(8, 4, 8, 4),
-                Cursor = Cursors.Hand,
-                VerticalAlignment = VerticalAlignment.Center
-            };
-            btnDeckSettings.Click += (s, e) => OpenSettingsDialog();
-            rightCtrl.Children.Add(btnDeckSettings);
-
-            Grid.SetColumn(rightCtrl, 1);
-            tier1Grid.Children.Add(rightCtrl);
-
-            deckStack.Children.Add(tier1Grid);
-
-            // --- SUBTLE DIVIDER ---
-            var deckDivider = new Border() {
-                Height = 1,
-                Background = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)),
-                Margin = new Thickness(0, 10, 0, 10)
-            };
-            deckStack.Children.Add(deckDivider);
-
-            // --- TIER 2: HERO ACTION DECK (STREAMLINED 1-CLICK LAUNCH) ---
-            var tier2Actions = new StackPanel() {
-                Orientation = Orientation.Horizontal,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center
-            };
-
-            // 1. Primary Hero 1-Click Launch Button
-            btnLaunch = new Button() {
-                Content = "🚀 تشغيل ستيم مع GreenLuma",
-                Background = new SolidColorBrush(Color.FromRgb(16, 185, 129)),
-                Foreground = new SolidColorBrush(Color.FromRgb(5, 15, 10)),
-                FontWeight = FontWeights.ExtraBold,
-                FontSize = 14,
-                Padding = new Thickness(36, 11, 36, 11),
-                Margin = new Thickness(0, 0, 12, 0),
-                BorderThickness = new Thickness(0),
-                Cursor = Cursors.Hand
-            };
-            var launchGlow = new DropShadowEffect() {
-                Color = Color.FromRgb(16, 185, 129),
-                BlurRadius = 18,
-                ShadowDepth = 0,
-                Opacity = 0.85
-            };
-            btnLaunch.Effect = launchGlow;
-            btnLaunch.Click += (s, e) => ExecuteSmartLaunch();
-            tier2Actions.Children.Add(btnLaunch);
-
-            // 2. Secondary Prepare / Inject Only Button
-            btnInjectFiles = new Button() {
-                Content = "📦 تجهيز الملفات فقط",
-                Background = new SolidColorBrush(Color.FromRgb(2, 132, 199)),
-                Foreground = new SolidColorBrush(Color.FromRgb(255, 255, 255)),
-                FontWeight = FontWeights.Bold,
-                FontSize = 12.5,
-                Padding = new Thickness(20, 10, 20, 10),
-                Margin = new Thickness(0, 0, 10, 0),
-                BorderThickness = new Thickness(0),
-                Cursor = Cursors.Hand
-            };
-            var injectGlow = new DropShadowEffect() {
-                Color = Color.FromRgb(2, 132, 199),
-                BlurRadius = 12,
-                ShadowDepth = 0,
-                Opacity = 0.6
-            };
-            btnInjectFiles.Effect = injectGlow;
-            btnInjectFiles.Click += (s, e) => InjectFilesOnly(true);
-            tier2Actions.Children.Add(btnInjectFiles);
-
-            // 3. Stop & Clean Button
-            btnStop = new Button() {
-                Content = "🛑 إيقاف وحذف الملفات",
-                Background = new SolidColorBrush(Color.FromRgb(239, 68, 68)),
-                Foreground = new SolidColorBrush(Color.FromRgb(255, 255, 255)),
-                FontWeight = FontWeights.Bold,
-                FontSize = 12.5,
-                Padding = new Thickness(18, 10, 18, 10),
-                BorderThickness = new Thickness(0),
-                Cursor = Cursors.Hand,
-                Visibility = Visibility.Collapsed
-            };
-            var stopGlow = new DropShadowEffect() {
-                Color = Color.FromRgb(239, 68, 68),
-                BlurRadius = 12,
-                ShadowDepth = 0,
-                Opacity = 0.7
-            };
-            btnStop.Effect = stopGlow;
-            btnStop.Click += (s, e) => StopSteamSession();
-            tier2Actions.Children.Add(btnStop);
-
-            deckStack.Children.Add(tier2Actions);
-
-            controlBorder.Child = deckStack;
-            Grid.SetRow(controlBorder, 2);
-            mainGrid.Children.Add(controlBorder);
-
-            // =========================================================================
-            // --- 3. VIP SEARCH COMMAND BAR (STANDALONE, FULL WIDTH) ---
-            // =========================================================================
-            var discoveryBorder = new Border() {
-                Background = new SolidColorBrush(Color.FromRgb(13, 18, 28)),
-                BorderBrush = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)),
                 BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(12),
-                Margin = new Thickness(20, 2, 20, 8),
-                Padding = new Thickness(12)
+                Cursor = Cursors.Hand,
+                VerticalAlignment = VerticalAlignment.Center
             };
+            AttachTactilePress(btnToggleClearCache);
+            btnToggleClearCache.Click += (s, e) => {
+                settings.clearAppCache = !settings.clearAppCache;
+                SaveSettings();
+                UpdateClearCacheButton();
+            };
+            telemetryRight.Children.Add(btnToggleClearCache);
+
+            Grid.SetColumn(telemetryRight, 1);
+            deckTopGrid.Children.Add(telemetryRight);
+
+            deckMainStack.Children.Add(deckTopGrid);
+
+            // ---------------------------------------------------------
+            // Tier 2: Search & Ingestion Bar (Dedicated Full Width)
+            // ---------------------------------------------------------
+            var deckSearchGrid = new Grid() { Margin = new Thickness(0, 10, 0, 0) };
+            deckSearchGrid.ColumnDefinitions.Add(new ColumnDefinition() { Width = new GridLength(1, GridUnitType.Star) }); // Stretch search
+            deckSearchGrid.ColumnDefinitions.Add(new ColumnDefinition() { Width = GridLength.Auto }); // Action buttons (+ Add, Bulk)
 
             searchContainer = new Border() {
                 Background = new SolidColorBrush(Color.FromRgb(8, 12, 18)),
-                BorderBrush = new SolidColorBrush(Color.FromArgb(70, 16, 185, 129)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(60, 16, 185, 129)),
                 BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(8),
-                Padding = new Thickness(8, 4, 8, 4)
+                CornerRadius = new CornerRadius(7),
+                Padding = new Thickness(10, 3, 10, 3),
+                HorizontalAlignment = HorizontalAlignment.Stretch
             };
-            var searchDock = new DockPanel();
+            var searchTg = new TransformGroup();
+            var searchSt = new ScaleTransform(1.0, 1.0);
+            searchTg.Children.Add(searchSt);
+            searchContainer.RenderTransformOrigin = new Point(0.5, 0.5);
+            searchContainer.RenderTransform = searchTg;
 
+            var searchDock = new DockPanel();
             var searchIcon = new TextBlock() {
                 Text = "🔍",
-                FontSize = 14,
+                FontSize = 13,
                 VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(4, 0, 8, 0)
+                Margin = new Thickness(2, 0, 8, 0)
             };
+            var iconSt = new ScaleTransform(1.0, 1.0);
+            searchIcon.RenderTransformOrigin = new Point(0.5, 0.5);
+            searchIcon.RenderTransform = iconSt;
+
             DockPanel.SetDock(searchIcon, Dock.Left);
             searchDock.Children.Add(searchIcon);
 
-            var actionBtns = new StackPanel() { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
-            btnAddInput = new Button() {
-                Content = "+ Add AppID",
-                Background = new SolidColorBrush(Color.FromRgb(16, 185, 129)),
-                Foreground = new SolidColorBrush(Color.FromRgb(5, 15, 10)),
-                FontWeight = FontWeights.Bold,
-                Padding = new Thickness(14, 5, 14, 5),
-                BorderThickness = new Thickness(0),
-                Cursor = Cursors.Hand,
-                Margin = new Thickness(8, 0, 6, 0)
-            };
-            btnAddInput.Click += (s, e) => AddGameFromInput();
-            actionBtns.Children.Add(btnAddInput);
-
-            btnBulk = new Button() {
-                Content = "📥 Bulk Import",
-                Background = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)),
-                Foreground = new SolidColorBrush(Color.FromRgb(241, 245, 249)),
-                Padding = new Thickness(12, 5, 12, 5),
-                BorderBrush = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)),
-                BorderThickness = new Thickness(1),
-                Cursor = Cursors.Hand
-            };
-            btnBulk.Click += (s, e) => OpenBulkImportDialog();
-            actionBtns.Children.Add(btnBulk);
-
-            DockPanel.SetDock(actionBtns, Dock.Right);
-            searchDock.Children.Add(actionBtns);
-
             var inputGrid = new Grid();
             txtGameInput = new TextBox() {
-                Height = 32,
-                FontSize = 13,
+                Height = 28,
+                FontSize = 12,
                 Background = Brushes.Transparent,
                 Foreground = new SolidColorBrush(Color.FromRgb(241, 245, 249)),
                 BorderThickness = new Thickness(0),
                 VerticalContentAlignment = VerticalAlignment.Center,
-                Padding = new Thickness(4, 0, 28, 0)
+                Padding = new Thickness(4, 0, 24, 0)
             };
             txtSearchPlaceholder = new TextBlock() {
-                Text = "Search any Steam game or DLC by name (e.g. Arc Raiders, Black Myth, Elden Ring) or enter AppID...",
-                FontSize = 12.5,
+                Text = "Search Steam game, DLC or enter AppID...",
+                FontSize = 11.5,
                 Foreground = new SolidColorBrush(Color.FromRgb(100, 116, 139)),
                 VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(5, 0, 0, 0),
+                Margin = new Thickness(4, 0, 0, 0),
                 IsHitTestVisible = false
             };
             btnClearSearch = new Button() {
                 Content = "✕",
-                FontSize = 11,
+                FontSize = 10,
                 FontWeight = FontWeights.Bold,
                 Foreground = new SolidColorBrush(Color.FromRgb(148, 163, 184)),
                 Background = Brushes.Transparent,
@@ -1909,7 +1886,7 @@ namespace GreenLumaManager
                 Cursor = Cursors.Hand,
                 HorizontalAlignment = HorizontalAlignment.Right,
                 VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 0, 8, 0),
+                Margin = new Thickness(0, 0, 4, 0),
                 Visibility = Visibility.Collapsed
             };
             btnClearSearch.Click += (s, e) => {
@@ -1927,6 +1904,27 @@ namespace GreenLumaManager
                 btnClearSearch.Visibility = string.IsNullOrEmpty(txtGameInput.Text) ? Visibility.Collapsed : Visibility.Visible;
                 searchDebounceTimer.Stop();
                 searchDebounceTimer.Start();
+            };
+
+            txtGameInput.GotFocus += (s, e) => {
+                searchContainer.BorderBrush = new SolidColorBrush(Color.FromRgb(16, 185, 129));
+                searchContainer.Effect = new DropShadowEffect() {
+                    Color = Color.FromRgb(16, 185, 129),
+                    BlurRadius = 18,
+                    ShadowDepth = 0,
+                    Opacity = 0.8
+                };
+                searchSt.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(1.0, 1.014, TimeSpan.FromMilliseconds(130)) { DecelerationRatio = 0.5 });
+                searchSt.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(1.0, 1.014, TimeSpan.FromMilliseconds(130)) { DecelerationRatio = 0.5 });
+                iconSt.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(1.0, 1.25, TimeSpan.FromMilliseconds(150)) { AutoReverse = true });
+                iconSt.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(1.0, 1.25, TimeSpan.FromMilliseconds(150)) { AutoReverse = true });
+            };
+
+            txtGameInput.LostFocus += (s, e) => {
+                searchContainer.BorderBrush = new SolidColorBrush(Color.FromArgb(60, 16, 185, 129));
+                searchContainer.Effect = null;
+                searchSt.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(1.014, 1.0, TimeSpan.FromMilliseconds(150)) { AccelerationRatio = 0.5 });
+                searchSt.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(1.014, 1.0, TimeSpan.FromMilliseconds(150)) { AccelerationRatio = 0.5 });
             };
 
             txtGameInput.KeyDown += (s, e) => {
@@ -1965,23 +1963,252 @@ namespace GreenLumaManager
             };
 
             searchContainer.Child = searchDock;
-            discoveryBorder.Child = searchContainer;
-            Grid.SetRow(discoveryBorder, 3);
-            mainGrid.Children.Add(discoveryBorder);
+            Grid.SetColumn(searchContainer, 0);
+            deckSearchGrid.Children.Add(searchContainer);
+
+            var searchButtonsStack = new StackPanel() { 
+                Orientation = Orientation.Horizontal, 
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(8, 0, 0, 0)
+            };
+
+            btnAddInput = new Button() {
+                Content = "+ Add",
+                Background = new SolidColorBrush(Color.FromRgb(16, 185, 129)),
+                Foreground = new SolidColorBrush(Color.FromRgb(5, 15, 10)),
+                FontWeight = FontWeights.Bold,
+                FontSize = 11.5,
+                Padding = new Thickness(14, 6, 14, 6),
+                Height = 32,
+                BorderThickness = new Thickness(0),
+                Cursor = Cursors.Hand,
+                Margin = new Thickness(0, 0, 6, 0)
+            };
+            AttachTactilePress(btnAddInput);
+            btnAddInput.Click += (s, e) => AddGameFromInput();
+            searchButtonsStack.Children.Add(btnAddInput);
+
+            btnBulk = new Button() {
+                Content = "📥 Bulk",
+                Background = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)),
+                Foreground = new SolidColorBrush(Color.FromRgb(241, 245, 249)),
+                FontSize = 11.5,
+                Padding = new Thickness(12, 6, 12, 6),
+                Height = 32,
+                BorderBrush = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)),
+                BorderThickness = new Thickness(1),
+                Cursor = Cursors.Hand
+            };
+            AttachTactilePress(btnBulk);
+            btnBulk.Click += (s, e) => OpenBulkImportDialog();
+            searchButtonsStack.Children.Add(btnBulk);
+
+            Grid.SetColumn(searchButtonsStack, 1);
+            deckSearchGrid.Children.Add(searchButtonsStack);
+
+            deckMainStack.Children.Add(deckSearchGrid);
+
+            heroCommandDeck.Child = deckMainStack;
+            Grid.SetRow(heroCommandDeck, 0);
+            mainContentGrid.Children.Add(heroCommandDeck);
+
+            // =========================================================================
+            // --- COMPACT TRAY FLYOUT OPERATING MODE (MODE A: 380x620) ---
+            // =========================================================================
+            miniContentGrid = new Grid() {
+                Margin = new Thickness(16, 10, 16, 12),
+                Visibility = Visibility.Collapsed
+            };
+            miniContentGrid.RowDefinitions.Add(new RowDefinition() { Height = GridLength.Auto }); // 0: Launch / Stop Hero Button
+            miniContentGrid.RowDefinitions.Add(new RowDefinition() { Height = GridLength.Auto }); // 1: Search & Add Bar
+            miniContentGrid.RowDefinitions.Add(new RowDefinition() { Height = new GridLength(1, GridUnitType.Star) }); // 2: Scrollable Games List
+            miniContentGrid.RowDefinitions.Add(new RowDefinition() { Height = GridLength.Auto }); // 3: Mini Footer Status & Actions
+
+            // Mini Row 0: Launch / Stop Button
+            var miniLaunchStack = new StackPanel() { Margin = new Thickness(0, 0, 0, 10) };
+            btnMiniLaunch = new Button() {
+                Content = "🚀 تشغيل ستيم مع GreenLuma",
+                Background = new SolidColorBrush(Color.FromRgb(16, 185, 129)),
+                Foreground = new SolidColorBrush(Color.FromRgb(5, 15, 10)),
+                FontWeight = FontWeights.ExtraBold,
+                FontSize = 13.5,
+                Height = 42,
+                BorderThickness = new Thickness(0),
+                Cursor = Cursors.Hand
+            };
+            btnMiniLaunch.Effect = new DropShadowEffect() {
+                Color = Color.FromRgb(16, 185, 129),
+                BlurRadius = 14,
+                ShadowDepth = 0,
+                Opacity = 0.8
+            };
+            AttachTactilePress(btnMiniLaunch);
+            btnMiniLaunch.Click += (s, e) => ExecuteSmartLaunch();
+            miniLaunchStack.Children.Add(btnMiniLaunch);
+
+            btnMiniStop = new Button() {
+                Content = "🛑 إيقاف وحذف الملفات",
+                Background = new SolidColorBrush(Color.FromRgb(239, 68, 68)),
+                Foreground = new SolidColorBrush(Color.FromRgb(255, 255, 255)),
+                FontWeight = FontWeights.Bold,
+                FontSize = 12.5,
+                Height = 38,
+                BorderThickness = new Thickness(0),
+                Cursor = Cursors.Hand,
+                Visibility = Visibility.Collapsed
+            };
+            AttachTactilePress(btnMiniStop);
+            btnMiniStop.Click += (s, e) => StopSteamSession();
+            miniLaunchStack.Children.Add(btnMiniStop);
+
+            Grid.SetRow(miniLaunchStack, 0);
+            miniContentGrid.Children.Add(miniLaunchStack);
+
+            // Mini Row 1: Search & Add AppID Bar
+            var miniSearchBorder = new Border() {
+                Background = new SolidColorBrush(Color.FromRgb(13, 18, 27)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(8, 4, 8, 4),
+                Margin = new Thickness(0, 0, 0, 10)
+            };
+            var miniSearchDock = new DockPanel();
+
+            btnMiniAdd = new Button() {
+                Content = "+ Add",
+                Background = new SolidColorBrush(Color.FromRgb(16, 185, 129)),
+                Foreground = new SolidColorBrush(Color.FromRgb(5, 15, 10)),
+                FontWeight = FontWeights.Bold,
+                FontSize = 11,
+                Padding = new Thickness(10, 4, 10, 4),
+                BorderThickness = new Thickness(0),
+                Cursor = Cursors.Hand
+            };
+            AttachTactilePress(btnMiniAdd);
+            btnMiniAdd.Click += (s, e) => {
+                string raw = txtMiniSearch.Text.Trim();
+                int id;
+                if (int.TryParse(raw, out id) && id > 0)
+                {
+                    AddGameById(id, null);
+                    txtMiniSearch.Text = "";
+                }
+                else if (!string.IsNullOrEmpty(raw))
+                {
+                    ApplyAppMode(false);
+                    txtGameInput.Text = raw;
+                    ExecuteLiveSearch(raw);
+                }
+            };
+            DockPanel.SetDock(btnMiniAdd, Dock.Right);
+            miniSearchDock.Children.Add(btnMiniAdd);
+
+            txtMiniSearch = new TextBox() {
+                Height = 26,
+                FontSize = 11.5,
+                Background = Brushes.Transparent,
+                Foreground = new SolidColorBrush(Color.FromRgb(241, 245, 249)),
+                BorderThickness = new Thickness(0),
+                VerticalContentAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 8, 0)
+            };
+            txtMiniSearch.KeyDown += (s, e) => {
+                if (e.Key == Key.Enter)
+                {
+                    btnMiniAdd.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                }
+            };
+            miniSearchDock.Children.Add(txtMiniSearch);
+            miniSearchBorder.Child = miniSearchDock;
+            Grid.SetRow(miniSearchBorder, 1);
+            miniContentGrid.Children.Add(miniSearchBorder);
+
+            // Mini Row 2: Scrollable Games List
+            var miniScroll = new ScrollViewer() {
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                Margin = new Thickness(0, 0, 0, 8)
+            };
+            miniGamesStack = new StackPanel();
+            miniScroll.Content = miniGamesStack;
+            Grid.SetRow(miniScroll, 2);
+            miniContentGrid.Children.Add(miniScroll);
+
+            // Mini Row 3: Mini Footer Dock
+            var miniFooterDock = new DockPanel() { Margin = new Thickness(0, 4, 0, 0) };
+
+            lblMiniStatus = new TextBlock() {
+                Text = "● Steam Inactive",
+                FontSize = 10.5,
+                Foreground = new SolidColorBrush(Color.FromRgb(148, 163, 184)),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            DockPanel.SetDock(lblMiniStatus, Dock.Left);
+            miniFooterDock.Children.Add(lblMiniStatus);
+
+            var miniActions = new StackPanel() { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+
+            btnMiniDoctor = new Button() {
+                Content = "🩺",
+                ToolTip = "Steam Doctor",
+                Background = new SolidColorBrush(Color.FromArgb(25, 255, 255, 255)),
+                Foreground = new SolidColorBrush(Color.FromRgb(226, 232, 240)),
+                BorderThickness = new Thickness(0),
+                Padding = new Thickness(6, 3, 6, 3),
+                Cursor = Cursors.Hand,
+                Margin = new Thickness(0, 0, 4, 0)
+            };
+            btnMiniDoctor.Click += (s, e) => OpenSteamDoctorModal();
+            miniActions.Children.Add(btnMiniDoctor);
+
+            btnMiniSettings = new Button() {
+                Content = "⚙️",
+                ToolTip = "Settings",
+                Background = new SolidColorBrush(Color.FromArgb(25, 255, 255, 255)),
+                Foreground = new SolidColorBrush(Color.FromRgb(226, 232, 240)),
+                BorderThickness = new Thickness(0),
+                Padding = new Thickness(6, 3, 6, 3),
+                Cursor = Cursors.Hand,
+                Margin = new Thickness(0, 0, 4, 0)
+            };
+            btnMiniSettings.Click += (s, e) => OpenSettingsDialog();
+            miniActions.Children.Add(btnMiniSettings);
+
+            btnMiniLang = new Button() {
+                Content = "🌐",
+                ToolTip = "Toggle Language",
+                Background = new SolidColorBrush(Color.FromArgb(25, 255, 255, 255)),
+                Foreground = new SolidColorBrush(Color.FromRgb(226, 232, 240)),
+                BorderThickness = new Thickness(0),
+                Padding = new Thickness(6, 3, 6, 3),
+                Cursor = Cursors.Hand
+            };
+            btnMiniLang.Click += (s, e) => ToggleLanguage();
+            miniActions.Children.Add(btnMiniLang);
+
+            DockPanel.SetDock(miniActions, Dock.Right);
+            miniFooterDock.Children.Add(miniActions);
+
+            Grid.SetRow(miniFooterDock, 3);
+            miniContentGrid.Children.Add(miniFooterDock);
+
+            Grid.SetRow(miniContentGrid, 2);
+            mainGrid.Children.Add(miniContentGrid);
 
             // Transparent Dismiss Backdrop for In-App Search Overlay (Multi-Monitor Safe)
             searchDismissBackdrop = new Grid() {
                 Background = Brushes.Transparent,
                 Visibility = Visibility.Collapsed
             };
-            Grid.SetRowSpan(searchDismissBackdrop, 5);
+            Grid.SetRow(searchDismissBackdrop, 2);
             Panel.SetZIndex(searchDismissBackdrop, 1400);
             searchDismissBackdrop.MouseDown += (s, e) => CloseSearchOverlay();
             mainGrid.Children.Add(searchDismissBackdrop);
 
-            // In-App Search Results Overlay
+            // In-App Search Results Overlay (Docked inside Main Window)
             searchOverlayBorder = new Border() {
-                Margin = new Thickness(20, 52, 20, 0),
+                Margin = new Thickness(20, 114, 20, 0),
                 MaxHeight = 440,
                 Background = new SolidColorBrush(Color.FromRgb(11, 16, 26)),
                 BorderBrush = new SolidColorBrush(Color.FromRgb(16, 185, 129)),
@@ -2029,29 +2256,75 @@ namespace GreenLumaManager
             popupContentStack.Children.Add(popupScroll);
 
             searchOverlayBorder.Child = popupContentStack;
-            Grid.SetRow(searchOverlayBorder, 3);
-            Grid.SetRowSpan(searchOverlayBorder, 2);
+            Grid.SetRow(searchOverlayBorder, 2);
             Panel.SetZIndex(searchOverlayBorder, 1500);
             mainGrid.Children.Add(searchOverlayBorder);
 
             // =========================================================================
-            // --- 4. SELECTED GAMES & DLCS (Library Grid with Filter Tabs) ---
+            // --- 4. SELECTED GAMES & DLCS (Library Grid with 2-Tier Header) ---
             // =========================================================================
             var libraryContainer = new Grid() { Margin = new Thickness(20, 4, 20, 16) };
             libraryContainer.RowDefinitions.Add(new RowDefinition() { Height = GridLength.Auto });
             libraryContainer.RowDefinitions.Add(new RowDefinition() { Height = new GridLength(1, GridUnitType.Star) });
 
-            var libraryHeaderDock = new DockPanel() { Margin = new Thickness(0, 0, 0, 10) };
+            var libraryHeaderStack = new StackPanel() { Margin = new Thickness(0, 0, 0, 10) };
+
+            // --- Tier 1: Category Filter Tabs & Dual View Switcher ---
+            var libNavDock = new DockPanel() { LastChildFill = false };
+
+            // Right: View Switcher (Cards vs List)
+            var viewSwitcherBorder = new Border() {
+                Background = new SolidColorBrush(Color.FromArgb(30, 15, 23, 42)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(50, 255, 255, 255)),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(6),
+                Padding = new Thickness(2),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            var switcherStack = new StackPanel() { Orientation = Orientation.Horizontal };
+
+            btnViewCards = new Button() {
+                Content = "⊞ Cards",
+                FontSize = 11,
+                FontWeight = FontWeights.SemiBold,
+                Padding = new Thickness(10, 3, 10, 3),
+                BorderThickness = new Thickness(0),
+                Cursor = Cursors.Hand
+            };
+            AttachTactilePress(btnViewCards);
+            btnViewCards.Click += (s, e) => SwitchViewMode("cards");
+
+            btnViewList = new Button() {
+                Content = "☰ List",
+                FontSize = 11,
+                FontWeight = FontWeights.SemiBold,
+                Padding = new Thickness(10, 3, 10, 3),
+                BorderThickness = new Thickness(0),
+                Cursor = Cursors.Hand
+            };
+            AttachTactilePress(btnViewList);
+            btnViewList.Click += (s, e) => SwitchViewMode("list");
+
+            switcherStack.Children.Add(btnViewCards);
+            switcherStack.Children.Add(btnViewList);
+            viewSwitcherBorder.Child = switcherStack;
+            DockPanel.SetDock(viewSwitcherBorder, Dock.Right);
+            libNavDock.Children.Add(viewSwitcherBorder);
+
+            // Left: Title & Category Tabs
+            var navLeftStack = new StackPanel() { 
+                Orientation = Orientation.Horizontal, 
+                VerticalAlignment = VerticalAlignment.Center 
+            };
             lblLibraryTitle = new TextBlock() {
-                Text = "🎮 UNLOCKED STEAM APPLIST:",
-                FontSize = 14,
+                Text = "🎮 APPLIST:",
+                FontSize = 13.5,
                 FontWeight = FontWeights.ExtraBold,
                 Foreground = new SolidColorBrush(Color.FromRgb(241, 245, 249)),
                 VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 0, 14, 0)
+                Margin = new Thickness(0, 0, 12, 0)
             };
-            DockPanel.SetDock(lblLibraryTitle, Dock.Left);
-            libraryHeaderDock.Children.Add(lblLibraryTitle);
+            navLeftStack.Children.Add(lblLibraryTitle);
 
             var tabsStack = new StackPanel() { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
             btnTabAll = CreateFilterTabButton("All (0)", "all", true);
@@ -2060,24 +2333,102 @@ namespace GreenLumaManager
             tabsStack.Children.Add(btnTabAll);
             tabsStack.Children.Add(btnTabGames);
             tabsStack.Children.Add(btnTabDlcs);
-            DockPanel.SetDock(tabsStack, Dock.Left);
-            libraryHeaderDock.Children.Add(tabsStack);
+            navLeftStack.Children.Add(tabsStack);
 
-            var libToolsStack = new StackPanel() { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+            DockPanel.SetDock(navLeftStack, Dock.Left);
+            libNavDock.Children.Add(navLeftStack);
+
+            libraryHeaderStack.Children.Add(libNavDock);
+
+            // --- Tier 2: Search Filter & Management Actions Toolbar ---
+            var libToolbarDock = new DockPanel() { Margin = new Thickness(0, 8, 0, 0) };
+
+            // Left: In-library search filter input with search icon container
+            var filterContainer = new Border() {
+                Width = 220,
+                Height = 28,
+                Background = new SolidColorBrush(Color.FromRgb(8, 12, 18)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(50, 255, 255, 255)),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(6),
+                Padding = new Thickness(8, 0, 6, 0),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            var filterTg = new TransformGroup();
+            var filterSt = new ScaleTransform(1.0, 1.0);
+            filterTg.Children.Add(filterSt);
+            filterContainer.RenderTransformOrigin = new Point(0.5, 0.5);
+            filterContainer.RenderTransform = filterTg;
+
+            var filterDock = new DockPanel();
+            var filterIcon = new TextBlock() {
+                Text = "🔍",
+                FontSize = 11,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 6, 0),
+                Foreground = new SolidColorBrush(Color.FromRgb(148, 163, 184))
+            };
+            DockPanel.SetDock(filterIcon, Dock.Left);
+            filterDock.Children.Add(filterIcon);
+
+            var filterHint = new Border() {
+                Background = new SolidColorBrush(Color.FromArgb(25, 255, 255, 255)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(3),
+                Padding = new Thickness(4, 1, 4, 1),
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(4, 0, 0, 0)
+            };
+            filterHint.Child = new TextBlock() {
+                Text = "Ctrl + F",
+                FontSize = 9.5,
+                FontFamily = new FontFamily("Consolas"),
+                Foreground = new SolidColorBrush(Color.FromRgb(100, 116, 139))
+            };
+            DockPanel.SetDock(filterHint, Dock.Right);
+            filterDock.Children.Add(filterHint);
 
             txtFilterInput = new TextBox() {
-                Width = 180,
-                Height = 26,
                 FontSize = 11.5,
-                Background = new SolidColorBrush(Color.FromRgb(8, 12, 18)),
+                Background = Brushes.Transparent,
                 Foreground = new SolidColorBrush(Color.FromRgb(241, 245, 249)),
-                BorderBrush = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)),
-                Padding = new Thickness(6, 2, 6, 2),
-                VerticalContentAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 0, 8, 0)
+                BorderThickness = new Thickness(0),
+                VerticalContentAlignment = VerticalAlignment.Center
             };
-            txtFilterInput.TextChanged += (s, e) => RenderGamesUI();
-            libToolsStack.Children.Add(txtFilterInput);
+            txtFilterInput.TextChanged += (s, e) => {
+                filterHint.Visibility = string.IsNullOrEmpty(txtFilterInput.Text) ? Visibility.Visible : Visibility.Collapsed;
+                RenderGamesUI();
+            };
+            txtFilterInput.GotFocus += (s, e) => {
+                filterContainer.BorderBrush = new SolidColorBrush(Color.FromRgb(16, 185, 129));
+                filterContainer.Effect = new DropShadowEffect() {
+                    Color = Color.FromRgb(16, 185, 129),
+                    BlurRadius = 14,
+                    ShadowDepth = 0,
+                    Opacity = 0.8
+                };
+                filterSt.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(1.0, 1.025, TimeSpan.FromMilliseconds(120)) { DecelerationRatio = 0.5 });
+                filterSt.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(1.0, 1.025, TimeSpan.FromMilliseconds(120)) { DecelerationRatio = 0.5 });
+            };
+            txtFilterInput.LostFocus += (s, e) => {
+                filterContainer.BorderBrush = new SolidColorBrush(Color.FromArgb(50, 255, 255, 255));
+                filterContainer.Effect = null;
+                filterSt.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(1.025, 1.0, TimeSpan.FromMilliseconds(140)) { AccelerationRatio = 0.5 });
+                filterSt.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(1.025, 1.0, TimeSpan.FromMilliseconds(140)) { AccelerationRatio = 0.5 });
+            };
+            filterDock.Children.Add(txtFilterInput);
+            filterContainer.Child = filterDock;
+
+            DockPanel.SetDock(filterContainer, Dock.Left);
+            libToolbarDock.Children.Add(filterContainer);
+
+            // Right: Utility Actions (Share, Import, Toggle All, Clear All)
+            var libToolsStack = new StackPanel() { 
+                Orientation = Orientation.Horizontal, 
+                HorizontalAlignment = HorizontalAlignment.Right,
+                VerticalAlignment = VerticalAlignment.Center 
+            };
 
             btnShareLibrary = new Button() {
                 Content = "📋 Share",
@@ -2085,10 +2436,12 @@ namespace GreenLumaManager
                 Foreground = new SolidColorBrush(Color.FromRgb(226, 232, 240)),
                 BorderBrush = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)),
                 BorderThickness = new Thickness(1),
-                Padding = new Thickness(8, 4, 8, 4),
+                Padding = new Thickness(10, 4, 10, 4),
+                Height = 28,
                 Cursor = Cursors.Hand,
                 Margin = new Thickness(0, 0, 6, 0)
             };
+            AttachTactilePress(btnShareLibrary);
             btnShareLibrary.Click += (s, e) => ExportLibraryToClipboard();
             libToolsStack.Children.Add(btnShareLibrary);
 
@@ -2098,10 +2451,12 @@ namespace GreenLumaManager
                 Foreground = new SolidColorBrush(Color.FromRgb(226, 232, 240)),
                 BorderBrush = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)),
                 BorderThickness = new Thickness(1),
-                Padding = new Thickness(8, 4, 8, 4),
+                Padding = new Thickness(10, 4, 10, 4),
+                Height = 28,
                 Cursor = Cursors.Hand,
                 Margin = new Thickness(0, 0, 6, 0)
             };
+            AttachTactilePress(btnImportLibrary);
             btnImportLibrary.Click += (s, e) => ImportLibraryFromClipboard();
             libToolsStack.Children.Add(btnImportLibrary);
 
@@ -2111,10 +2466,12 @@ namespace GreenLumaManager
                 Foreground = new SolidColorBrush(Color.FromRgb(226, 232, 240)),
                 BorderBrush = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)),
                 BorderThickness = new Thickness(1),
-                Padding = new Thickness(8, 4, 8, 4),
+                Padding = new Thickness(10, 4, 10, 4),
+                Height = 28,
                 Cursor = Cursors.Hand,
                 Margin = new Thickness(0, 0, 6, 0)
             };
+            AttachTactilePress(btnToggleAll);
             btnToggleAll.Click += (s, e) => {
                 bool anyDisabled = false;
                 foreach (var g in gamesList) { if (!g.enabled) { anyDisabled = true; break; } }
@@ -2130,9 +2487,11 @@ namespace GreenLumaManager
                 Foreground = new SolidColorBrush(Color.FromRgb(248, 113, 113)),
                 BorderBrush = new SolidColorBrush(Color.FromArgb(50, 239, 68, 68)),
                 BorderThickness = new Thickness(1),
-                Padding = new Thickness(8, 4, 8, 4),
+                Padding = new Thickness(10, 4, 10, 4),
+                Height = 28,
                 Cursor = Cursors.Hand
             };
+            AttachTactilePress(btnClearAll);
             btnClearAll.Click += (s, e) => {
                 if (gamesList.Count == 0) return;
                 bool isAr = (settings.lang == "ar");
@@ -2149,9 +2508,13 @@ namespace GreenLumaManager
             };
             libToolsStack.Children.Add(btnClearAll);
 
-            libraryHeaderDock.Children.Add(libToolsStack);
-            Grid.SetRow(libraryHeaderDock, 0);
-            libraryContainer.Children.Add(libraryHeaderDock);
+            DockPanel.SetDock(libToolsStack, Dock.Right);
+            libToolbarDock.Children.Add(libToolsStack);
+
+            libraryHeaderStack.Children.Add(libToolbarDock);
+
+            Grid.SetRow(libraryHeaderStack, 0);
+            libraryContainer.Children.Add(libraryHeaderStack);
 
             var scroll = new ScrollViewer() {
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
@@ -2160,7 +2523,9 @@ namespace GreenLumaManager
 
             var gamesContainerGrid = new Grid();
             gamesWrapPanel = new WrapPanel() { Orientation = Orientation.Horizontal };
+            gamesListStack = new StackPanel() { Visibility = Visibility.Collapsed };
             gamesContainerGrid.Children.Add(gamesWrapPanel);
+            gamesContainerGrid.Children.Add(gamesListStack);
 
             // Modern Empty State with Trending Quick-Add Chips
             emptyStatePanel = new StackPanel() {
@@ -2259,8 +2624,8 @@ namespace GreenLumaManager
             Grid.SetRow(scroll, 1);
             libraryContainer.Children.Add(scroll);
 
-            Grid.SetRow(libraryContainer, 4);
-            mainGrid.Children.Add(libraryContainer);
+            Grid.SetRow(libraryContainer, 1);
+            mainContentGrid.Children.Add(libraryContainer);
 
             var rootGrid = new Grid();
             rootGrid.Children.Add(mainGrid);
@@ -2285,6 +2650,1086 @@ namespace GreenLumaManager
 
             rootBorder.Child = rootGrid;
             Content = rootBorder;
+
+            // Apply Saved Dual View Mode & Dual Operating Mode
+            SwitchViewMode(string.IsNullOrEmpty(settings.viewMode) ? "cards" : settings.viewMode);
+            if (settings.isMiniMode)
+            {
+                ApplyAppMode(true);
+            }
+        }
+
+        private void MainWindow_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            if (isMiniMode) return;
+            bool isAr = (settings.lang == "ar");
+
+            if (e.NewSize.Width < 980)
+            {
+                if (txtLogoSub != null) txtLogoSub.Visibility = Visibility.Collapsed;
+                if (txtBadgeVer != null) txtBadgeVer.Visibility = Visibility.Collapsed;
+                if (btnModeToggle != null) btnModeToggle.Content = "⛶";
+                if (btnSettings != null) btnSettings.Content = "⚙️";
+            }
+            else
+            {
+                if (txtLogoSub != null) txtLogoSub.Visibility = Visibility.Visible;
+                if (txtBadgeVer != null) txtBadgeVer.Visibility = Visibility.Visible;
+                if (btnModeToggle != null) btnModeToggle.Content = isMiniMode ? (isAr ? "🗖 مكبر" : "🗖 Big") : (isAr ? "⛶ مصغر" : "⛶ Mini");
+                if (btnSettings != null) btnSettings.Content = isAr ? "⚙️ الإعدادات" : "⚙️ Settings";
+            }
+
+            if (e.NewSize.Width < 840)
+            {
+                if (badgeStealthMode != null) badgeStealthMode.Visibility = Visibility.Collapsed;
+            }
+            else
+            {
+                if (badgeStealthMode != null) badgeStealthMode.Visibility = Visibility.Visible;
+            }
+        }
+
+        private void ApplyAppMode(bool mini)
+        {
+            isMiniMode = mini;
+            settings.isMiniMode = mini;
+            SaveSettings();
+
+            bool isAr = (settings.lang == "ar");
+
+            if (mini)
+            {
+                // Save geometry of dashboard
+                if (WindowState == WindowState.Normal)
+                {
+                    savedMainWidth = this.ActualWidth > 0 ? this.ActualWidth : this.Width;
+                    savedMainHeight = this.ActualHeight > 0 ? this.ActualHeight : this.Height;
+                    savedMainLeft = this.Left;
+                    savedMainTop = this.Top;
+                }
+
+                if (WindowState == WindowState.Maximized)
+                {
+                    WindowState = WindowState.Normal;
+                }
+
+                this.MinWidth = 360;
+                this.MinHeight = 480;
+                this.Width = 380;
+                this.Height = 620;
+
+                // Dock near Windows system tray
+                var workArea = SystemParameters.WorkArea;
+                this.Left = Math.Max(0, workArea.Right - this.Width - 16);
+                this.Top = Math.Max(0, workArea.Bottom - this.Height - 16);
+
+                if (mainContentGrid != null) mainContentGrid.Visibility = Visibility.Collapsed;
+                if (miniContentGrid != null) miniContentGrid.Visibility = Visibility.Visible;
+                if (btnWinMax != null) btnWinMax.Visibility = Visibility.Collapsed;
+                if (unifiedStatusPill != null) unifiedStatusPill.Visibility = Visibility.Collapsed;
+                if (txtLogoSub != null) txtLogoSub.Visibility = Visibility.Collapsed;
+
+                if (btnModeToggle != null)
+                {
+                    btnModeToggle.Content = isAr ? "🗖 مكبر" : "🗖 Big";
+                    btnModeToggle.ToolTip = isAr ? "التبديل إلى لوحة التحكم الكاملة" : "Expand to Full Dashboard";
+                }
+
+                RenderMiniGamesList();
+            }
+            else
+            {
+                this.MinWidth = 760;
+                this.MinHeight = 540;
+                this.Width = (savedMainWidth >= 760) ? savedMainWidth : 1140;
+                this.Height = (savedMainHeight >= 540) ? savedMainHeight : 780;
+
+                var workArea = SystemParameters.WorkArea;
+                if (savedMainLeft >= 0 && savedMainLeft < (workArea.Right - 100) &&
+                    savedMainTop >= 0 && savedMainTop < (workArea.Bottom - 100))
+                {
+                    this.Left = savedMainLeft;
+                    this.Top = savedMainTop;
+                }
+                else
+                {
+                    this.Left = Math.Max(workArea.Left + 40, (workArea.Width - this.Width) / 2);
+                    this.Top = Math.Max(workArea.Top + 40, (workArea.Height - this.Height) / 2);
+                }
+
+                if (mainContentGrid != null) mainContentGrid.Visibility = Visibility.Visible;
+                if (miniContentGrid != null) miniContentGrid.Visibility = Visibility.Collapsed;
+                if (btnWinMax != null) btnWinMax.Visibility = Visibility.Visible;
+                if (unifiedStatusPill != null) unifiedStatusPill.Visibility = Visibility.Visible;
+                if (txtLogoSub != null) txtLogoSub.Visibility = Visibility.Visible;
+
+                if (btnModeToggle != null)
+                {
+                    btnModeToggle.Content = isAr ? "⛶ مصغر" : "⛶ Mini";
+                    btnModeToggle.ToolTip = isAr ? "التبديل إلى المنظر المصغر (نافذة صينية سريعة)" : "Switch to Compact Tray Mode";
+                }
+
+                RenderGamesUI();
+            }
+        }
+
+        private void SwitchViewMode(string mode)
+        {
+            currentViewMode = (mode == "list") ? "list" : "cards";
+            settings.viewMode = currentViewMode;
+            SaveSettings();
+
+            UpdateViewSwitcherStyles();
+
+            if (gamesWrapPanel != null && gamesListStack != null)
+            {
+                if (currentViewMode == "list")
+                {
+                    gamesWrapPanel.Visibility = Visibility.Collapsed;
+                    gamesListStack.Visibility = Visibility.Visible;
+                }
+                else
+                {
+                    gamesWrapPanel.Visibility = Visibility.Visible;
+                    gamesListStack.Visibility = Visibility.Collapsed;
+                }
+            }
+
+            AnimateTabSwitchTransition();
+            RenderGamesUI();
+        }
+
+        private void UpdateViewSwitcherStyles()
+        {
+            bool isAr = (settings.lang == "ar");
+            bool isCards = (currentViewMode == "cards");
+
+            if (btnViewCards != null)
+            {
+                btnViewCards.Content = isAr ? "⊞ بطاقات" : "⊞ Cards";
+                btnViewCards.Background = isCards ? new SolidColorBrush(Color.FromRgb(16, 185, 129)) : Brushes.Transparent;
+                btnViewCards.Foreground = isCards ? new SolidColorBrush(Color.FromRgb(5, 15, 10)) : new SolidColorBrush(Color.FromRgb(148, 163, 184));
+                btnViewCards.FontWeight = isCards ? FontWeights.Bold : FontWeights.Normal;
+            }
+
+            if (btnViewList != null)
+            {
+                btnViewList.Content = isAr ? "☰ قائمة" : "☰ List";
+                btnViewList.Background = !isCards ? new SolidColorBrush(Color.FromRgb(16, 185, 129)) : Brushes.Transparent;
+                btnViewList.Foreground = !isCards ? new SolidColorBrush(Color.FromRgb(5, 15, 10)) : new SolidColorBrush(Color.FromRgb(148, 163, 184));
+                btnViewList.FontWeight = !isCards ? FontWeights.Bold : FontWeights.Normal;
+            }
+        }
+
+        private void AttachTactilePress(UIElement btn)
+        {
+            if (btn == null) return;
+            var tg = btn.RenderTransform as TransformGroup;
+            if (tg == null)
+            {
+                tg = new TransformGroup();
+                tg.Children.Add(new ScaleTransform(1.0, 1.0));
+                tg.Children.Add(new TranslateTransform(0, 0));
+                btn.RenderTransformOrigin = new Point(0.5, 0.5);
+                btn.RenderTransform = tg;
+            }
+            var st = tg.Children[0] as ScaleTransform;
+
+            btn.PreviewMouseDown += (s, e) => {
+                if (st != null)
+                {
+                    st.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(1.0, 0.94, TimeSpan.FromMilliseconds(70)) { DecelerationRatio = 0.5 });
+                    st.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(1.0, 0.94, TimeSpan.FromMilliseconds(70)) { DecelerationRatio = 0.5 });
+                }
+            };
+            btn.PreviewMouseUp += (s, e) => {
+                if (st != null)
+                {
+                    st.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(0.94, 1.0, TimeSpan.FromMilliseconds(100)) { DecelerationRatio = 0.5 });
+                    st.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(0.94, 1.0, TimeSpan.FromMilliseconds(100)) { DecelerationRatio = 0.5 });
+                }
+            };
+        }
+
+        private void AnimateTabSwitchTransition()
+        {
+            bool isAr = (settings.lang == "ar");
+            FrameworkElement target = (currentViewMode == "list") ? (FrameworkElement)gamesListStack : (FrameworkElement)gamesWrapPanel;
+            if (target != null)
+            {
+                var tg = target.RenderTransform as TransformGroup;
+                if (tg == null)
+                {
+                    tg = new TransformGroup();
+                    tg.Children.Add(new ScaleTransform(1.0, 1.0));
+                    tg.Children.Add(new TranslateTransform(0, 0));
+                    target.RenderTransformOrigin = new Point(0.5, 0.5);
+                    target.RenderTransform = tg;
+                }
+                var tt = tg.Children[1] as TranslateTransform;
+                if (tt != null)
+                {
+                    tt.X = isAr ? -35 : 35;
+                    tt.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(isAr ? -35 : 35, 0, TimeSpan.FromMilliseconds(220)) { DecelerationRatio = 0.6 });
+                }
+                target.Opacity = 0.0;
+                target.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(0.0, 1.0, TimeSpan.FromMilliseconds(200)));
+            }
+        }
+
+        private void AnimateAndRemoveCard(Border card, GameItem game)
+        {
+            if (card == null || game == null) return;
+            card.IsHitTestVisible = false;
+
+            var tg = card.RenderTransform as TransformGroup;
+            ScaleTransform st = null;
+            TranslateTransform tt = null;
+            if (tg != null)
+            {
+                foreach (var t in tg.Children)
+                {
+                    if (t is ScaleTransform) st = (ScaleTransform)t;
+                    else if (t is TranslateTransform) tt = (TranslateTransform)t;
+                }
+            }
+
+            var shadow = card.Effect as DropShadowEffect;
+            if (shadow != null)
+            {
+                shadow.Color = Color.FromRgb(239, 68, 68);
+                shadow.BeginAnimation(DropShadowEffect.BlurRadiusProperty, new DoubleAnimation(0, 32, TimeSpan.FromMilliseconds(160)));
+            }
+
+            bool isAr = (settings.lang == "ar");
+            if (tt != null)
+            {
+                var daX = new DoubleAnimation(0, isAr ? -80 : 80, TimeSpan.FromMilliseconds(180)) {
+                    AccelerationRatio = 0.6
+                };
+                tt.BeginAnimation(TranslateTransform.XProperty, daX);
+            }
+            if (st != null)
+            {
+                var daScale = new DoubleAnimation(1.0, 0.72, TimeSpan.FromMilliseconds(180)) {
+                    AccelerationRatio = 0.6
+                };
+                st.BeginAnimation(ScaleTransform.ScaleXProperty, daScale);
+                st.BeginAnimation(ScaleTransform.ScaleYProperty, daScale);
+            }
+
+            var daOp = new DoubleAnimation(1.0, 0.0, TimeSpan.FromMilliseconds(180)) {
+                AccelerationRatio = 0.6
+            };
+            daOp.Completed += (s, e) => {
+                gamesList.Remove(game);
+                SaveGames();
+                UpdateTabButtonStyles();
+                RenderGamesUI();
+                ShowToast(isAr ? ("تمت إزالة " + game.name) : ("Removed " + game.name), ToastType.Info);
+            };
+            card.BeginAnimation(UIElement.OpacityProperty, daOp);
+        }
+
+        private void AnimateAndRemoveRow(Border row, GameItem game)
+        {
+            if (row == null || game == null) return;
+            row.IsHitTestVisible = false;
+
+            var tg = row.RenderTransform as TransformGroup;
+            ScaleTransform st = null;
+            TranslateTransform tt = null;
+            if (tg != null)
+            {
+                foreach (var t in tg.Children)
+                {
+                    if (t is ScaleTransform) st = (ScaleTransform)t;
+                    else if (t is TranslateTransform) tt = (TranslateTransform)t;
+                }
+            }
+
+            bool isAr = (settings.lang == "ar");
+            if (tt != null)
+            {
+                var daX = new DoubleAnimation(0, isAr ? -70 : 70, TimeSpan.FromMilliseconds(160)) {
+                    AccelerationRatio = 0.6
+                };
+                tt.BeginAnimation(TranslateTransform.XProperty, daX);
+            }
+            if (st != null)
+            {
+                var daScale = new DoubleAnimation(1.0, 0.8, TimeSpan.FromMilliseconds(160)) {
+                    AccelerationRatio = 0.6
+                };
+                st.BeginAnimation(ScaleTransform.ScaleXProperty, daScale);
+                st.BeginAnimation(ScaleTransform.ScaleYProperty, daScale);
+            }
+
+            var daOp = new DoubleAnimation(1.0, 0.0, TimeSpan.FromMilliseconds(160)) {
+                AccelerationRatio = 0.6
+            };
+            daOp.Completed += (s, e) => {
+                gamesList.Remove(game);
+                SaveGames();
+                UpdateTabButtonStyles();
+                RenderGamesUI();
+                ShowToast(isAr ? ("تمت إزالة " + game.name) : ("Removed " + game.name), ToastType.Info);
+            };
+            row.BeginAnimation(UIElement.OpacityProperty, daOp);
+        }
+
+        private FrameworkElement CreateNeonToggle(bool initialValue, Action<bool> onToggled, string activeText = null, string inactiveText = null)
+        {
+            bool isAr = (settings.lang == "ar");
+            string strActive = activeText ?? (isAr ? "مفعّل" : "Active");
+            string strInactive = inactiveText ?? (isAr ? "معطّل" : "Disabled");
+
+            var rootTg = new TransformGroup();
+            var rootSt = new ScaleTransform(1.0, 1.0);
+            rootTg.Children.Add(rootSt);
+
+            var root = new Border() {
+                Background = Brushes.Transparent,
+                Cursor = Cursors.Hand,
+                Height = 24,
+                VerticalAlignment = VerticalAlignment.Center,
+                ToolTip = isAr ? "انقر للتشغيل أو التعطيل" : "Click to toggle status",
+                RenderTransformOrigin = new Point(0.5, 0.5),
+                RenderTransform = rootTg
+            };
+
+            var stack = new StackPanel() { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+
+            // Track
+            var trackGlow = new DropShadowEffect() { BlurRadius = 0, ShadowDepth = 0, Color = Color.FromRgb(16, 185, 129), Opacity = 0.85 };
+            var track = new Border() {
+                Width = 34,
+                Height = 18,
+                CornerRadius = new CornerRadius(9),
+                BorderThickness = new Thickness(1),
+                VerticalAlignment = VerticalAlignment.Center,
+                Effect = trackGlow
+            };
+
+            // Thumb inside Grid with translation
+            var trackGrid = new Grid() { Width = 32, Height = 16 };
+            var thumbTg = new TransformGroup();
+            var thumbTt = new TranslateTransform(0, 0);
+            thumbTg.Children.Add(thumbTt);
+
+            var thumb = new Border() {
+                Width = 12,
+                Height = 12,
+                CornerRadius = new CornerRadius(6),
+                Background = Brushes.White,
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                RenderTransform = thumbTg,
+                Effect = new DropShadowEffect() { BlurRadius = 4, ShadowDepth = 1, Opacity = 0.4 }
+            };
+            trackGrid.Children.Add(thumb);
+            track.Child = trackGrid;
+
+            // Label
+            var txtLabel = new TextBlock() {
+                FontSize = 11,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(6, 0, 0, 0)
+            };
+
+            stack.Children.Add(track);
+            stack.Children.Add(txtLabel);
+            root.Child = stack;
+
+            bool currentVal = initialValue;
+
+            Action<bool, bool> applyState = (val, animate) => {
+                if (val)
+                {
+                    track.Background = new SolidColorBrush(Color.FromRgb(16, 185, 129));
+                    track.BorderBrush = new SolidColorBrush(Color.FromRgb(52, 211, 153));
+                    trackGlow.Color = Color.FromRgb(16, 185, 129);
+                    txtLabel.Text = strActive;
+                    txtLabel.Foreground = new SolidColorBrush(Color.FromRgb(110, 231, 183));
+                    txtLabel.FontWeight = FontWeights.SemiBold;
+                    if (animate)
+                    {
+                        thumbTt.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(thumbTt.X, 18, TimeSpan.FromMilliseconds(130)) { DecelerationRatio = 0.6 });
+                        trackGlow.BeginAnimation(DropShadowEffect.BlurRadiusProperty, new DoubleAnimation(14, 0, TimeSpan.FromMilliseconds(220)));
+                    }
+                    else
+                    {
+                        thumbTt.X = 18;
+                    }
+                }
+                else
+                {
+                    track.Background = new SolidColorBrush(Color.FromArgb(160, 30, 41, 59));
+                    track.BorderBrush = new SolidColorBrush(Color.FromArgb(200, 71, 85, 105));
+                    trackGlow.Color = Color.FromRgb(100, 116, 139);
+                    txtLabel.Text = strInactive;
+                    txtLabel.Foreground = new SolidColorBrush(Color.FromRgb(148, 163, 184));
+                    txtLabel.FontWeight = FontWeights.Normal;
+                    if (animate)
+                    {
+                        thumbTt.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(thumbTt.X, 2, TimeSpan.FromMilliseconds(130)) { DecelerationRatio = 0.6 });
+                    }
+                    else
+                    {
+                        thumbTt.X = 2;
+                    }
+                }
+            };
+
+            applyState(currentVal, false);
+
+            root.MouseDown += (s, e) => {
+                e.Handled = true;
+                currentVal = !currentVal;
+                rootSt.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(1.0, 0.93, TimeSpan.FromMilliseconds(70)) { AutoReverse = true, DecelerationRatio = 0.5 });
+                rootSt.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(1.0, 0.93, TimeSpan.FromMilliseconds(70)) { AutoReverse = true, DecelerationRatio = 0.5 });
+                applyState(currentVal, true);
+                if (onToggled != null) onToggled(currentVal);
+            };
+
+            return root;
+        }
+
+        private void OpenGameDlcManagerDialog(GameItem baseGame)
+        {
+            if (baseGame == null) return;
+            bool isAr = (settings.lang == "ar");
+
+            var linkedDlcs = new List<GameItem>();
+            foreach (var other in gamesList)
+            {
+                if (other.CheckIsDLC() && (other.parentAppId == baseGame.appId || (!string.IsNullOrEmpty(other.parentName) && other.parentName.Equals(baseGame.name, StringComparison.OrdinalIgnoreCase))))
+                {
+                    linkedDlcs.Add(other);
+                }
+            }
+
+            var mainStack = new StackPanel();
+
+            // Header Hero Banner with Base Game Info
+            var headerBanner = new Border() {
+                Background = new SolidColorBrush(Color.FromArgb(40, 245, 158, 11)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(70, 245, 158, 11)),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(12, 10, 12, 10),
+                Margin = new Thickness(0, 0, 0, 12)
+            };
+            var bannerDock = new DockPanel();
+
+            var thumbBorder = new Border() {
+                Width = 64,
+                Height = 36,
+                CornerRadius = new CornerRadius(4),
+                ClipToBounds = true,
+                Background = new SolidColorBrush(Color.FromRgb(5, 8, 12)),
+                Margin = new Thickness(0, 0, 10, 0)
+            };
+            var thumbImg = new Image() { Stretch = Stretch.UniformToFill };
+            try
+            {
+                var bmp = new BitmapImage();
+                bmp.BeginInit();
+                bmp.UriSource = new Uri(baseGame.image, UriKind.RelativeOrAbsolute);
+                bmp.CacheOption = BitmapCacheOption.OnLoad;
+                bmp.EndInit();
+                thumbImg.Source = bmp;
+            }
+            catch { }
+            thumbBorder.Child = thumbImg;
+            DockPanel.SetDock(thumbBorder, Dock.Left);
+            bannerDock.Children.Add(thumbBorder);
+
+            var titleStack = new StackPanel() { VerticalAlignment = VerticalAlignment.Center };
+            var baseTitle = new TextBlock() {
+                Text = baseGame.name,
+                FontSize = 13,
+                FontWeight = FontWeights.Bold,
+                Foreground = new SolidColorBrush(Color.FromRgb(241, 245, 249)),
+                TextTrimming = TextTrimming.CharacterEllipsis
+            };
+            titleStack.Children.Add(baseTitle);
+
+            var subTitle = new TextBlock() {
+                Text = isAr ? 
+                    string.Format("إدارة الإضافات المرتبطة ({0} DLCs) | AppID: {1}", linkedDlcs.Count, baseGame.appId) : 
+                    string.Format("Manage Linked DLCs ({0} DLCs) | AppID: {1}", linkedDlcs.Count, baseGame.appId),
+                FontSize = 11,
+                Foreground = new SolidColorBrush(Color.FromRgb(251, 191, 36)),
+                Margin = new Thickness(0, 2, 0, 0)
+            };
+            titleStack.Children.Add(subTitle);
+            bannerDock.Children.Add(titleStack);
+
+            headerBanner.Child = bannerDock;
+            mainStack.Children.Add(headerBanner);
+
+            // Management Toolbar
+            var toolbarDock = new DockPanel() { Margin = new Thickness(0, 0, 0, 10) };
+
+            var btnScanSteam = new Button() {
+                Content = isAr ? "➕ فحص وتنزيل إضافات جديدة من Steam" : "➕ Scan Steam for More DLCs",
+                Background = new SolidColorBrush(Color.FromArgb(40, 16, 185, 129)),
+                Foreground = new SolidColorBrush(Color.FromRgb(110, 231, 183)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(80, 16, 185, 129)),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(10, 6, 10, 6),
+                FontSize = 11,
+                FontWeight = FontWeights.SemiBold,
+                Cursor = Cursors.Hand
+            };
+            btnScanSteam.Click += (s, e) => {
+                CloseInAppModal();
+                FetchAndAddDLCs(baseGame.appId, baseGame.name);
+            };
+            DockPanel.SetDock(btnScanSteam, Dock.Left);
+            toolbarDock.Children.Add(btnScanSteam);
+
+            var quickTogglesStack = new StackPanel() { 
+                Orientation = Orientation.Horizontal, 
+                HorizontalAlignment = HorizontalAlignment.Right 
+            };
+
+            var btnEnableAll = new Button() {
+                Content = isAr ? "🟢 تفعيل الكل" : "🟢 Enable All",
+                Background = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)),
+                Foreground = new SolidColorBrush(Color.FromRgb(226, 232, 240)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(50, 255, 255, 255)),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(8, 4, 8, 4),
+                FontSize = 10.5,
+                Cursor = Cursors.Hand,
+                Margin = new Thickness(0, 0, 6, 0)
+            };
+
+            var btnDisableAll = new Button() {
+                Content = isAr ? "⚪ تعطيل الكل" : "⚪ Disable All",
+                Background = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255)),
+                Foreground = new SolidColorBrush(Color.FromRgb(148, 163, 184)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(8, 4, 8, 4),
+                FontSize = 10.5,
+                Cursor = Cursors.Hand
+            };
+
+            quickTogglesStack.Children.Add(btnEnableAll);
+            quickTogglesStack.Children.Add(btnDisableAll);
+            toolbarDock.Children.Add(quickTogglesStack);
+
+            mainStack.Children.Add(toolbarDock);
+
+            // DLC List ScrollViewer
+            var scroll = new ScrollViewer() {
+                MaxHeight = 340,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                Margin = new Thickness(0, 0, 0, 10)
+            };
+            var listStack = new StackPanel();
+
+            Action refreshDlcList = null;
+            refreshDlcList = () => {
+                listStack.Children.Clear();
+                if (linkedDlcs.Count == 0)
+                {
+                    listStack.Children.Add(new TextBlock() {
+                        Text = isAr ? "لا توجد إضافات مرتبطة بهذه اللعبة حالياً." : "No DLCs currently linked to this game.",
+                        FontSize = 12,
+                        Foreground = new SolidColorBrush(Color.FromRgb(148, 163, 184)),
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        Margin = new Thickness(0, 25, 0, 25)
+                    });
+                    return;
+                }
+
+                foreach (var dlc in linkedDlcs)
+                {
+                    var itemRef = dlc;
+                    var rowBorder = new Border() {
+                        Background = new SolidColorBrush(Color.FromArgb(40, 15, 23, 42)),
+                        BorderBrush = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)),
+                        BorderThickness = new Thickness(1),
+                        CornerRadius = new CornerRadius(6),
+                        Padding = new Thickness(8, 5, 8, 5),
+                        Margin = new Thickness(0, 0, 0, 5)
+                    };
+
+                    var rowDock = new DockPanel();
+
+                    // Right side: Neon Toggle + Remove Button
+                    var rightStack = new StackPanel() { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+                    DockPanel.SetDock(rightStack, Dock.Right);
+
+                    var neonToggle = CreateNeonToggle(itemRef.enabled, (val) => {
+                        itemRef.enabled = val;
+                        SaveGames();
+                        UpdateStatusUI();
+                    });
+                    neonToggle.Margin = new Thickness(0, 0, 8, 0);
+                    rightStack.Children.Add(neonToggle);
+
+                    var btnDel = new Button() {
+                        Content = "✕",
+                        FontSize = 11,
+                        FontWeight = FontWeights.Bold,
+                        Background = Brushes.Transparent,
+                        Foreground = new SolidColorBrush(Color.FromRgb(239, 68, 68)),
+                        BorderThickness = new Thickness(0),
+                        Padding = new Thickness(6, 2, 6, 2),
+                        Cursor = Cursors.Hand
+                    };
+                    btnDel.Click += (s, e) => {
+                        gamesList.Remove(itemRef);
+                        linkedDlcs.Remove(itemRef);
+                        SaveGames();
+                        UpdateTabButtonStyles();
+                        RenderGamesUI();
+                        refreshDlcList();
+                    };
+                    rightStack.Children.Add(btnDel);
+                    rowDock.Children.Add(rightStack);
+
+                    // Left side: AppID + DLC Name
+                    var leftStack = new StackPanel() { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+
+                    var idBadge = new Border() {
+                        Background = new SolidColorBrush(Color.FromArgb(30, 245, 158, 11)),
+                        BorderBrush = new SolidColorBrush(Color.FromArgb(60, 245, 158, 11)),
+                        BorderThickness = new Thickness(1),
+                        CornerRadius = new CornerRadius(4),
+                        Padding = new Thickness(6, 2, 6, 2),
+                        Margin = new Thickness(0, 0, 8, 0),
+                        VerticalAlignment = VerticalAlignment.Center
+                    };
+                    idBadge.Child = new TextBlock() {
+                        Text = itemRef.appId.ToString(),
+                        FontFamily = new FontFamily("Consolas"),
+                        FontSize = 10.5,
+                        FontWeight = FontWeights.Bold,
+                        Foreground = new SolidColorBrush(Color.FromRgb(251, 191, 36))
+                    };
+                    leftStack.Children.Add(idBadge);
+
+                    var txtTitle = new TextBlock() {
+                        Text = itemRef.name,
+                        FontSize = 12,
+                        FontWeight = FontWeights.SemiBold,
+                        Foreground = itemRef.enabled ? new SolidColorBrush(Color.FromRgb(241, 245, 249)) : new SolidColorBrush(Color.FromRgb(148, 163, 184)),
+                        TextTrimming = TextTrimming.CharacterEllipsis,
+                        MaxWidth = 360,
+                        VerticalAlignment = VerticalAlignment.Center
+                    };
+                    leftStack.Children.Add(txtTitle);
+                    rowDock.Children.Add(leftStack);
+
+                    rowBorder.Child = rowDock;
+                    listStack.Children.Add(rowBorder);
+                }
+            };
+
+            btnEnableAll.Click += (s, e) => {
+                foreach (var d in linkedDlcs) d.enabled = true;
+                SaveGames();
+                UpdateStatusUI();
+                refreshDlcList();
+                RenderGamesUI();
+            };
+
+            btnDisableAll.Click += (s, e) => {
+                foreach (var d in linkedDlcs) d.enabled = false;
+                SaveGames();
+                UpdateStatusUI();
+                refreshDlcList();
+                RenderGamesUI();
+            };
+
+            refreshDlcList();
+            scroll.Content = listStack;
+            mainStack.Children.Add(scroll);
+
+            // Done Button
+            var btnDone = new Button() {
+                Content = isAr ? "إغلاق" : "Done",
+                Background = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)),
+                Foreground = new SolidColorBrush(Color.FromRgb(241, 245, 249)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(50, 255, 255, 255)),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(16, 7, 16, 7),
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Cursor = Cursors.Hand
+            };
+            btnDone.Click += (s, e) => {
+                CloseInAppModal();
+                UpdateTabButtonStyles();
+                RenderGamesUI();
+            };
+            mainStack.Children.Add(btnDone);
+
+            ShowInAppModal(mainStack, isAr ? ("🧩 إدارة إضافات: " + baseGame.name) : ("🧩 DLC Manager: " + baseGame.name), () => {
+                UpdateTabButtonStyles();
+                RenderGamesUI();
+            }, 660);
+        }
+
+        private Border CreateGameRow(GameItem game)
+        {
+            bool isAr = (settings.lang == "ar");
+            bool isActuallyDlc = game.CheckIsDLC();
+
+            var rowBorder = new Border() {
+                Height = 44,
+                Margin = new Thickness(0, 0, 0, 5),
+                Background = new SolidColorBrush(Color.FromRgb(14, 19, 30)),
+                BorderBrush = isActuallyDlc ? 
+                    new SolidColorBrush(Color.FromArgb(60, 245, 158, 11)) : 
+                    new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(7),
+                Padding = new Thickness(8, 4, 10, 4)
+            };
+
+            var rowTg = new TransformGroup();
+            var rowSt = new ScaleTransform(1.0, 1.0);
+            var rowTt = new TranslateTransform(0, 0);
+            rowTg.Children.Add(rowSt);
+            rowTg.Children.Add(rowTt);
+            rowBorder.RenderTransformOrigin = new Point(0.5, 0.5);
+            rowBorder.RenderTransform = rowTg;
+
+            var rowDock = new DockPanel() { LastChildFill = true };
+
+            // Left: Thumbnail + AppID + Title + Type Badge
+            var leftStack = new StackPanel() { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+            DockPanel.SetDock(leftStack, Dock.Left);
+
+            // Mini Thumbnail
+            var thumbBorder = new Border() {
+                Width = 48,
+                Height = 30,
+                CornerRadius = new CornerRadius(4),
+                ClipToBounds = true,
+                Background = new SolidColorBrush(Color.FromRgb(5, 8, 12)),
+                Margin = new Thickness(0, 0, 10, 0)
+            };
+            var thumbImg = new Image() { Stretch = Stretch.UniformToFill };
+            try
+            {
+                var bmp = new BitmapImage();
+                bmp.BeginInit();
+                bmp.UriSource = new Uri(game.image, UriKind.RelativeOrAbsolute);
+                bmp.CacheOption = BitmapCacheOption.OnLoad;
+                bmp.EndInit();
+                thumbImg.Source = bmp;
+            }
+            catch { }
+            thumbBorder.Child = thumbImg;
+            leftStack.Children.Add(thumbBorder);
+
+            // AppID Monospace Badge
+            var badgeId = new Border() {
+                Background = new SolidColorBrush(Color.FromArgb(30, 6, 182, 212)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(60, 6, 182, 212)),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(4),
+                Padding = new Thickness(6, 2, 6, 2),
+                Margin = new Thickness(0, 0, 8, 0),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            badgeId.Child = new TextBlock() {
+                Text = game.appId.ToString(),
+                FontFamily = new FontFamily("Consolas"),
+                FontSize = 10.5,
+                FontWeight = FontWeights.Bold,
+                Foreground = new SolidColorBrush(Color.FromRgb(103, 232, 249))
+            };
+            leftStack.Children.Add(badgeId);
+
+            // Type Badge (Clickable to toggle!)
+            var typeBadge = new Border() {
+                CornerRadius = new CornerRadius(4),
+                Padding = new Thickness(6, 2, 6, 2),
+                Margin = new Thickness(0, 0, 10, 0),
+                Background = isActuallyDlc ? 
+                    new SolidColorBrush(Color.FromArgb(50, 245, 158, 11)) : 
+                    new SolidColorBrush(Color.FromArgb(50, 16, 185, 129)),
+                Cursor = Cursors.Hand,
+                ToolTip = isAr ? "انقر للتبديل الفوري بين لعبة كاملة وإضافة (DLC)" : "Click to instantly toggle between Game and DLC",
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            typeBadge.Child = new TextBlock() {
+                Text = isActuallyDlc ? "🧩 DLC" : "🎮 GAME",
+                FontSize = 10,
+                FontWeight = FontWeights.Bold,
+                Foreground = isActuallyDlc ? new SolidColorBrush(Color.FromRgb(245, 158, 11)) : new SolidColorBrush(Color.FromRgb(16, 185, 129))
+            };
+            typeBadge.MouseDown += (s, e) => {
+                game.type = isActuallyDlc ? "game" : "dlc";
+                SaveGames();
+                UpdateTabButtonStyles();
+                RenderGamesUI();
+            };
+            leftStack.Children.Add(typeBadge);
+
+            // Title
+            var txtTitle = new TextBlock() {
+                Text = game.name,
+                FontSize = 12.5,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = game.enabled ? new SolidColorBrush(Color.FromRgb(241, 245, 249)) : new SolidColorBrush(Color.FromRgb(100, 116, 139)),
+                VerticalAlignment = VerticalAlignment.Center,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                MaxWidth = 360
+            };
+            leftStack.Children.Add(txtTitle);
+
+            if (isActuallyDlc)
+            {
+                string parentLabel = !string.IsNullOrEmpty(game.parentName) ? game.parentName : (game.parentAppId > 0 ? ("App " + game.parentAppId) : null);
+                if (!string.IsNullOrEmpty(parentLabel))
+                {
+                    var parentChip = new Border() {
+                        Background = new SolidColorBrush(Color.FromArgb(30, 6, 182, 212)),
+                        BorderBrush = new SolidColorBrush(Color.FromArgb(60, 6, 182, 212)),
+                        BorderThickness = new Thickness(1),
+                        CornerRadius = new CornerRadius(4),
+                        Padding = new Thickness(6, 2, 6, 2),
+                        Margin = new Thickness(8, 0, 0, 0),
+                        VerticalAlignment = VerticalAlignment.Center,
+                        Cursor = Cursors.Hand,
+                        ToolTip = isAr ? ("انقر لتصفية مكتبتك حسب اللعبة الأساسية: " + parentLabel) : ("Click to filter library by base game: " + parentLabel)
+                    };
+                    parentChip.Child = new TextBlock() {
+                        Text = "🔗 " + parentLabel,
+                        FontSize = 10,
+                        FontWeight = FontWeights.SemiBold,
+                        Foreground = new SolidColorBrush(Color.FromRgb(103, 232, 249))
+                    };
+                    parentChip.MouseDown += (s, e) => {
+                        if (txtFilterInput != null) txtFilterInput.Text = parentLabel;
+                    };
+                    leftStack.Children.Add(parentChip);
+                }
+            }
+
+            rowDock.Children.Add(leftStack);
+
+            // Right: DLC Indicator + Enable Toggle + Remove Button
+            var rightStack = new StackPanel() { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
+            DockPanel.SetDock(rightStack, Dock.Right);
+
+            // DLC Count if game has DLCs
+            int linkedDlcCount = 0;
+            if (!isActuallyDlc)
+            {
+                foreach (var other in gamesList)
+                {
+                    if (other.CheckIsDLC() && (other.parentAppId == game.appId || (!string.IsNullOrEmpty(other.parentName) && other.parentName.Equals(game.name, StringComparison.OrdinalIgnoreCase))))
+                    {
+                        linkedDlcCount++;
+                    }
+                }
+            }
+
+            if (linkedDlcCount > 0)
+            {
+                var dlcPill = new Border() {
+                    Background = new SolidColorBrush(Color.FromArgb(35, 245, 158, 11)),
+                    BorderBrush = new SolidColorBrush(Color.FromArgb(70, 245, 158, 11)),
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(4),
+                    Padding = new Thickness(6, 2, 6, 2),
+                    Margin = new Thickness(0, 0, 8, 0),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Cursor = Cursors.Hand,
+                    ToolTip = isAr ? string.Format("انقر لإدارة {0} إضافات تابعة لـ {1}", linkedDlcCount, game.name) : string.Format("Click to manage {0} DLCs for {1}", linkedDlcCount, game.name)
+                };
+                dlcPill.Child = new TextBlock() {
+                    Text = string.Format("🧩 {0} DLCs", linkedDlcCount),
+                    FontSize = 10,
+                    FontWeight = FontWeights.Bold,
+                    Foreground = new SolidColorBrush(Color.FromRgb(251, 191, 36))
+                };
+                dlcPill.MouseDown += (s, e) => {
+                    OpenGameDlcManagerDialog(game);
+                };
+                rightStack.Children.Add(dlcPill);
+            }
+
+            // Neon Toggle Switch
+            var toggleRow = CreateNeonToggle(game.enabled, (val) => {
+                game.enabled = val;
+                SaveGames();
+                UpdateStatusUI();
+                RenderGamesUI();
+            });
+            toggleRow.Margin = new Thickness(0, 0, 8, 0);
+            rightStack.Children.Add(toggleRow);
+
+            // Remove Button
+            var btnRemove = new Button() {
+                Content = "✕",
+                FontSize = 11,
+                FontWeight = FontWeights.Bold,
+                Background = Brushes.Transparent,
+                Foreground = new SolidColorBrush(Color.FromRgb(148, 163, 184)),
+                BorderThickness = new Thickness(0),
+                Padding = new Thickness(6, 2, 6, 2),
+                Cursor = Cursors.Hand
+            };
+            btnRemove.MouseEnter += (s, e) => btnRemove.Foreground = new SolidColorBrush(Color.FromRgb(239, 68, 68));
+            btnRemove.MouseLeave += (s, e) => btnRemove.Foreground = new SolidColorBrush(Color.FromRgb(148, 163, 184));
+            btnRemove.Click += (s, e) => {
+                AnimateAndRemoveRow(rowBorder, game);
+            };
+            rightStack.Children.Add(btnRemove);
+
+            rowDock.Children.Add(rightStack);
+            rowBorder.Child = rowDock;
+
+            rowBorder.MouseEnter += (s, e) => {
+                rowBorder.Background = new SolidColorBrush(Color.FromRgb(24, 34, 52));
+                rowBorder.BorderBrush = isActuallyDlc ? new SolidColorBrush(Color.FromRgb(245, 158, 11)) : new SolidColorBrush(Color.FromRgb(16, 185, 129));
+                rowTt.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(0, isAr ? -6 : 6, TimeSpan.FromMilliseconds(120)) { DecelerationRatio = 0.5 });
+                rowSt.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(1.0, 1.008, TimeSpan.FromMilliseconds(120)));
+            };
+            rowBorder.MouseLeave += (s, e) => {
+                rowBorder.Background = new SolidColorBrush(Color.FromRgb(14, 19, 30));
+                rowBorder.BorderBrush = isActuallyDlc ? new SolidColorBrush(Color.FromArgb(60, 245, 158, 11)) : new SolidColorBrush(Color.FromArgb(40, 255, 255, 255));
+                rowTt.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(isAr ? -6 : 6, 0, TimeSpan.FromMilliseconds(140)));
+                rowSt.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(1.008, 1.0, TimeSpan.FromMilliseconds(140)));
+            };
+
+            return rowBorder;
+        }
+
+        private void RenderMiniGamesList()
+        {
+            if (miniGamesStack == null) return;
+            miniGamesStack.Children.Clear();
+
+            bool isAr = (settings.lang == "ar");
+
+            if (gamesList.Count == 0)
+            {
+                var emptyText = new TextBlock() {
+                    Text = isAr ? "لا توجد ألعاب مضافة" : "No games in library",
+                    FontSize = 11,
+                    Foreground = new SolidColorBrush(Color.FromRgb(100, 116, 139)),
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    Margin = new Thickness(0, 24, 0, 0)
+                };
+                miniGamesStack.Children.Add(emptyText);
+                return;
+            }
+
+            foreach (var g in gamesList)
+            {
+                var gameItem = g;
+                var row = new Border() {
+                    Height = 36,
+                    Margin = new Thickness(0, 0, 0, 4),
+                    Background = new SolidColorBrush(Color.FromRgb(14, 19, 30)),
+                    BorderBrush = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)),
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(6),
+                    Padding = new Thickness(8, 2, 8, 2),
+                    Cursor = Cursors.Hand
+                };
+
+                var dock = new DockPanel() { LastChildFill = true };
+
+                var btnRemove = new Button() {
+                    Content = "✕",
+                    FontSize = 10,
+                    Foreground = new SolidColorBrush(Color.FromRgb(148, 163, 184)),
+                    Background = Brushes.Transparent,
+                    BorderThickness = new Thickness(0),
+                    Cursor = Cursors.Hand,
+                    Padding = new Thickness(4, 2, 4, 2)
+                };
+                btnRemove.MouseEnter += (s, e) => btnRemove.Foreground = new SolidColorBrush(Color.FromRgb(239, 68, 68));
+                btnRemove.MouseLeave += (s, e) => btnRemove.Foreground = new SolidColorBrush(Color.FromRgb(148, 163, 184));
+                btnRemove.Click += (s, e) => {
+                    gamesList.Remove(gameItem);
+                    SaveGames();
+                    UpdateTabButtonStyles();
+                    RenderGamesUI();
+                    RenderMiniGamesList();
+                };
+                DockPanel.SetDock(btnRemove, Dock.Right);
+                dock.Children.Add(btnRemove);
+
+                var leftStack = new StackPanel() { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+
+                var chkStatus = new TextBlock() {
+                    Text = gameItem.enabled ? "●" : "○",
+                    FontSize = 12,
+                    Foreground = gameItem.enabled ? new SolidColorBrush(Color.FromRgb(16, 185, 129)) : new SolidColorBrush(Color.FromRgb(100, 116, 139)),
+                    Margin = new Thickness(0, 0, 6, 0),
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                leftStack.Children.Add(chkStatus);
+
+                var titleText = new TextBlock() {
+                    Text = gameItem.name,
+                    FontSize = 11,
+                    FontWeight = FontWeights.SemiBold,
+                    Foreground = gameItem.enabled ? new SolidColorBrush(Color.FromRgb(241, 245, 249)) : new SolidColorBrush(Color.FromRgb(100, 116, 139)),
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                    MaxWidth = 220,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                leftStack.Children.Add(titleText);
+                dock.Children.Add(leftStack);
+
+                row.Child = dock;
+
+                row.MouseDown += (s, e) => {
+                    if (e.OriginalSource != btnRemove)
+                    {
+                        gameItem.enabled = !gameItem.enabled;
+                        SaveGames();
+                        RenderGamesUI();
+                        RenderMiniGamesList();
+                    }
+                };
+
+                miniGamesStack.Children.Add(row);
+            }
+        }
+
+        private bool IsRemoteVersionNewer(string remoteTag, string localTag)
+        {
+            if (string.IsNullOrEmpty(remoteTag) || string.IsNullOrEmpty(localTag)) return false;
+            try
+            {
+                string rClean = remoteTag.Trim().TrimStart('v', 'V');
+                string lClean = localTag.Trim().TrimStart('v', 'V');
+                Version rVer, lVer;
+                if (Version.TryParse(rClean, out rVer) && Version.TryParse(lClean, out lVer))
+                {
+                    return rVer > lVer;
+                }
+
+                string[] rParts = rClean.Split('.');
+                string[] lParts = lClean.Split('.');
+                int len = Math.Max(rParts.Length, lParts.Length);
+                for (int i = 0; i < len; i++)
+                {
+                    int rNum = 0, lNum = 0;
+                    if (i < rParts.Length) int.TryParse(rParts[i], out rNum);
+                    if (i < lParts.Length) int.TryParse(lParts[i], out lNum);
+                    if (rNum > lNum) return true;
+                    if (rNum < lNum) return false;
+                }
+            }
+            catch { }
+            return false;
         }
 
         private void UpdateModeButtonStyles()
@@ -2292,8 +3737,8 @@ namespace GreenLumaManager
             bool isAr = (settings.lang == "ar");
             if (txtStealthMode != null)
             {
-                txtStealthMode.Text = isAr ? "🛡️ محرك التخفي الشامل (user32SF)" : "🛡️ Stealth Engine (user32SF)";
-                txtStealthMode.ToolTip = isAr ? "وضع التخفي الأحدث لستيم (متوافق مع نظام العائلات وجميع الألعاب)" : "Latest Steam Stealth Mode (Compatible with Families & all games)";
+                txtStealthMode.Text = "🛡️ user32SF";
+                txtStealthMode.ToolTip = isAr ? "محرك التخفي الأحدث لستيم (متوافق مع نظام العائلات وجميع الألعاب)" : "Universal Steam Stealth Engine (Compatible with Families & all modern games)";
             }
         }
 
@@ -2332,9 +3777,11 @@ namespace GreenLumaManager
                 Margin = new Thickness(0, 0, 6, 0),
                 Cursor = Cursors.Hand
             };
+            AttachTactilePress(btn);
             btn.Click += (s, e) => {
                 currentFilterTab = tabKey;
                 UpdateTabButtonStyles();
+                AnimateTabSwitchTransition();
                 RenderGamesUI();
             };
             return btn;
@@ -2375,6 +3822,419 @@ namespace GreenLumaManager
             btn.BorderBrush = active ? new SolidColorBrush(Color.FromRgb(16, 185, 129)) : new SolidColorBrush(Color.FromArgb(40, 255, 255, 255));
         }
 
+        private List<InstalledGameInfo> ScanInstalledSteamGames()
+        {
+            var results = new List<InstalledGameInfo>();
+            var seenAppIds = new HashSet<int>();
+            var libraryPaths = new List<string>();
+            var knownLibPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            Action<string> addLibPath = (p) => {
+                if (string.IsNullOrEmpty(p)) return;
+                try
+                {
+                    string full = Path.GetFullPath(p);
+                    if (Directory.Exists(full) && !knownLibPaths.Contains(full))
+                    {
+                        knownLibPaths.Add(full);
+                        libraryPaths.Add(full);
+                    }
+                }
+                catch { }
+            };
+
+            // 1. Primary Steam folder
+            if (!string.IsNullOrEmpty(steamDir))
+            {
+                addLibPath(steamDir);
+            }
+
+            // 2. Discover libraries from libraryfolders.vdf
+            try
+            {
+                string vdfPath = Path.Combine(steamDir, "steamapps", "libraryfolders.vdf");
+                if (File.Exists(vdfPath))
+                {
+                    string content = File.ReadAllText(vdfPath);
+                    var matches = Regex.Matches(content, @"""path""\s*""([^""]+)""");
+                    foreach (Match m in matches)
+                    {
+                        if (m.Groups.Count > 1)
+                        {
+                            string raw = m.Groups[1].Value.Replace(@"\\", @"\");
+                            addLibPath(raw);
+                        }
+                    }
+                }
+            }
+            catch { }
+
+            // 3. Fallback drive roots
+            string[] fallbackRoots = new string[] { @"C:\SteamLibrary", @"D:\SteamLibrary", @"E:\SteamLibrary", @"F:\SteamLibrary", @"G:\SteamLibrary" };
+            foreach (var fb in fallbackRoots)
+            {
+                addLibPath(fb);
+            }
+
+            // 4. Scan appmanifest_*.acf in each library's steamapps folder
+            foreach (var lib in libraryPaths)
+            {
+                string steamappsDir = Path.Combine(lib, "steamapps");
+                if (!Directory.Exists(steamappsDir))
+                {
+                    steamappsDir = lib;
+                }
+
+                if (!Directory.Exists(steamappsDir)) continue;
+
+                try
+                {
+                    var acfFiles = Directory.GetFiles(steamappsDir, "appmanifest_*.acf");
+                    foreach (var acf in acfFiles)
+                    {
+                        try
+                        {
+                            string text = File.ReadAllText(acf);
+                            var mId = Regex.Match(text, @"""appid""\s*""(\d+)""");
+                            var mName = Regex.Match(text, @"""name""\s*""([^""]+)""");
+                            var mDir = Regex.Match(text, @"""installdir""\s*""([^""]+)""");
+                            var mSize = Regex.Match(text, @"""SizeOnDisk""\s*""(\d+)""");
+
+                            if (mId.Success && mName.Success)
+                            {
+                                int id = int.Parse(mId.Groups[1].Value);
+                                string name = mName.Groups[1].Value;
+
+                                if (id == 228980 || id == 1070560 || id == 1391110 || id == 1493710 || id == 2180100)
+                                    continue;
+                                if (name.StartsWith("Steamworks", StringComparison.OrdinalIgnoreCase) ||
+                                    name.StartsWith("Proton", StringComparison.OrdinalIgnoreCase) ||
+                                    name.StartsWith("Steam Linux Runtime", StringComparison.OrdinalIgnoreCase))
+                                    continue;
+
+                                if (!seenAppIds.Contains(id))
+                                {
+                                    seenAppIds.Add(id);
+                                    long sz = 0;
+                                    if (mSize.Success) long.TryParse(mSize.Groups[1].Value, out sz);
+
+                                    bool alreadyInLib = false;
+                                    foreach (var g in gamesList)
+                                    {
+                                        if (g.appId == id) { alreadyInLib = true; break; }
+                                    }
+
+                                    results.Add(new InstalledGameInfo() {
+                                        appId = id,
+                                        name = name,
+                                        installDir = mDir.Success ? mDir.Groups[1].Value : "",
+                                        sizeBytes = sz,
+                                        isAlreadyAdded = alreadyInLib,
+                                        isSelected = !alreadyInLib
+                                    });
+                                }
+                            }
+                        }
+                        catch { }
+                    }
+                }
+                catch { }
+            }
+
+            // Sort: Not yet added first, then alphabetically by name
+            results.Sort((a, b) => {
+                if (a.isAlreadyAdded != b.isAlreadyAdded)
+                    return a.isAlreadyAdded ? 1 : -1;
+                return string.Compare(a.name, b.name, StringComparison.OrdinalIgnoreCase);
+            });
+
+            return results;
+        }
+
+        private void OpenInstalledGamesModal()
+        {
+            bool isAr = (settings.lang == "ar");
+            var installedGames = ScanInstalledSteamGames();
+
+            var mainStack = new StackPanel();
+
+            // Header summary banner
+            var headerBanner = new Border() {
+                Background = new SolidColorBrush(Color.FromArgb(40, 16, 185, 129)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(80, 16, 185, 129)),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(12, 10, 12, 10),
+                Margin = new Thickness(0, 0, 0, 12)
+            };
+            var bannerStack = new StackPanel();
+            bannerStack.Children.Add(new TextBlock() {
+                Text = isAr ? 
+                    string.Format("تم العثور على {0} لعبة مثبتة على هذا الجهاز عبر مكتبات Steam.", installedGames.Count) : 
+                    string.Format("Found {0} installed games across your local Steam libraries.", installedGames.Count),
+                FontSize = 12.5,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = new SolidColorBrush(Color.FromRgb(241, 245, 249))
+            });
+            bannerStack.Children.Add(new TextBlock() {
+                Text = isAr ? 
+                    "اختر الألعاب التي ترغب في إضافتها إلى قائمة ألعاب GreenLuma بنقرة واحدة:" : 
+                    "Select games you want to import into your GreenLuma manager:",
+                FontSize = 11,
+                Foreground = new SolidColorBrush(Color.FromRgb(148, 163, 184)),
+                Margin = new Thickness(0, 3, 0, 0)
+            });
+            headerBanner.Child = bannerStack;
+            mainStack.Children.Add(headerBanner);
+
+            // Filter box & quick selection buttons
+            var toolRow = new DockPanel() { Margin = new Thickness(0, 0, 0, 10) };
+
+            var selectBtnsStack = new StackPanel() { Orientation = Orientation.Horizontal };
+            DockPanel.SetDock(selectBtnsStack, Dock.Right);
+
+            var btnSelectAllNew = new Button() {
+                Content = isAr ? "☑️ تحديد الجديد فقط" : "☑️ Select All New",
+                Background = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)),
+                Foreground = new SolidColorBrush(Color.FromRgb(226, 232, 240)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(50, 255, 255, 255)),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(8, 4, 8, 4),
+                FontSize = 11,
+                Cursor = Cursors.Hand,
+                Margin = new Thickness(0, 0, 6, 0)
+            };
+
+            var btnDeselectAll = new Button() {
+                Content = isAr ? "⚪ إلغاء التحديد" : "⚪ Deselect All",
+                Background = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255)),
+                Foreground = new SolidColorBrush(Color.FromRgb(148, 163, 184)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(8, 4, 8, 4),
+                FontSize = 11,
+                Cursor = Cursors.Hand
+            };
+
+            selectBtnsStack.Children.Add(btnSelectAllNew);
+            selectBtnsStack.Children.Add(btnDeselectAll);
+            toolRow.Children.Add(selectBtnsStack);
+
+            // Search filter box
+            var filterBox = new Border() {
+                Background = new SolidColorBrush(Color.FromRgb(8, 12, 18)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(50, 255, 255, 255)),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(6),
+                Padding = new Thickness(8, 2, 8, 2),
+                Margin = new Thickness(0, 0, 10, 0)
+            };
+            var filterTb = new TextBox() {
+                Background = Brushes.Transparent,
+                Foreground = new SolidColorBrush(Color.FromRgb(241, 245, 249)),
+                BorderThickness = new Thickness(0),
+                FontSize = 11.5,
+                VerticalContentAlignment = VerticalAlignment.Center
+            };
+            filterBox.Child = filterTb;
+            toolRow.Children.Add(filterBox);
+            mainStack.Children.Add(toolRow);
+
+            // Games ScrollViewer list
+            var scroll = new ScrollViewer() {
+                MaxHeight = 360,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                Margin = new Thickness(0, 0, 0, 12)
+            };
+            var listStack = new StackPanel();
+
+            var chkMap = new Dictionary<InstalledGameInfo, CheckBox>();
+
+            Action populateList = () => {
+                listStack.Children.Clear();
+                chkMap.Clear();
+                string filterText = filterTb.Text.Trim().ToLowerInvariant();
+
+                foreach (var g in installedGames)
+                {
+                    if (!string.IsNullOrEmpty(filterText))
+                    {
+                        if (!g.name.ToLowerInvariant().Contains(filterText) && !g.appId.ToString().Contains(filterText))
+                            continue;
+                    }
+
+                    var rowBorder = new Border() {
+                        Background = new SolidColorBrush(Color.FromArgb(40, 15, 23, 42)),
+                        BorderBrush = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)),
+                        BorderThickness = new Thickness(1),
+                        CornerRadius = new CornerRadius(6),
+                        Padding = new Thickness(8, 6, 8, 6),
+                        Margin = new Thickness(0, 0, 0, 5)
+                    };
+
+                    var rowDock = new DockPanel();
+
+                    // Checkbox or "Already Added" badge
+                    if (g.isAlreadyAdded)
+                    {
+                        var addedBadge = new Border() {
+                            Background = new SolidColorBrush(Color.FromArgb(30, 16, 185, 129)),
+                            BorderBrush = new SolidColorBrush(Color.FromArgb(60, 16, 185, 129)),
+                            BorderThickness = new Thickness(1),
+                            CornerRadius = new CornerRadius(4),
+                            Padding = new Thickness(6, 2, 6, 2),
+                            VerticalAlignment = VerticalAlignment.Center
+                        };
+                        addedBadge.Child = new TextBlock() {
+                            Text = isAr ? "✓ مضاف بالفعل" : "✓ In Library",
+                            FontSize = 10,
+                            FontWeight = FontWeights.SemiBold,
+                            Foreground = new SolidColorBrush(Color.FromRgb(110, 231, 183))
+                        };
+                        DockPanel.SetDock(addedBadge, Dock.Right);
+                        rowDock.Children.Add(addedBadge);
+                    }
+                    else
+                    {
+                        var chk = new CheckBox() {
+                            IsChecked = g.isSelected,
+                            VerticalAlignment = VerticalAlignment.Center,
+                            Margin = new Thickness(8, 0, 0, 0)
+                        };
+                        var gameRef = g;
+                        chk.Checked += (s, e) => gameRef.isSelected = true;
+                        chk.Unchecked += (s, e) => gameRef.isSelected = false;
+                        chkMap[g] = chk;
+                        DockPanel.SetDock(chk, Dock.Right);
+                        rowDock.Children.Add(chk);
+                    }
+
+                    // Left side: AppID badge + Title
+                    var leftStack = new StackPanel() { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+
+                    var idBadge = new Border() {
+                        Background = new SolidColorBrush(Color.FromArgb(30, 6, 182, 212)),
+                        BorderBrush = new SolidColorBrush(Color.FromArgb(60, 6, 182, 212)),
+                        BorderThickness = new Thickness(1),
+                        CornerRadius = new CornerRadius(4),
+                        Padding = new Thickness(6, 2, 6, 2),
+                        Margin = new Thickness(0, 0, 8, 0),
+                        VerticalAlignment = VerticalAlignment.Center
+                    };
+                    idBadge.Child = new TextBlock() {
+                        Text = g.appId.ToString(),
+                        FontFamily = new FontFamily("Consolas"),
+                        FontSize = 10.5,
+                        FontWeight = FontWeights.Bold,
+                        Foreground = new SolidColorBrush(Color.FromRgb(103, 232, 249))
+                    };
+                    leftStack.Children.Add(idBadge);
+
+                    var txtTitle = new TextBlock() {
+                        Text = g.name,
+                        FontSize = 12,
+                        FontWeight = FontWeights.SemiBold,
+                        Foreground = g.isAlreadyAdded ? new SolidColorBrush(Color.FromRgb(148, 163, 184)) : new SolidColorBrush(Color.FromRgb(241, 245, 249)),
+                        TextTrimming = TextTrimming.CharacterEllipsis,
+                        MaxWidth = 420,
+                        VerticalAlignment = VerticalAlignment.Center
+                    };
+                    leftStack.Children.Add(txtTitle);
+
+                    rowDock.Children.Add(leftStack);
+                    rowBorder.Child = rowDock;
+                    listStack.Children.Add(rowBorder);
+                }
+
+                if (listStack.Children.Count == 0)
+                {
+                    listStack.Children.Add(new TextBlock() {
+                        Text = isAr ? "لا توجد ألعاب مطابقة للبحث." : "No matching games found.",
+                        FontSize = 12,
+                        Foreground = new SolidColorBrush(Color.FromRgb(148, 163, 184)),
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        Margin = new Thickness(0, 20, 0, 20)
+                    });
+                }
+            };
+
+            filterTb.TextChanged += (s, e) => populateList();
+            btnSelectAllNew.Click += (s, e) => {
+                foreach (var g in installedGames) { if (!g.isAlreadyAdded) g.isSelected = true; }
+                foreach (var kv in chkMap) { kv.Value.IsChecked = true; }
+            };
+            btnDeselectAll.Click += (s, e) => {
+                foreach (var g in installedGames) { g.isSelected = false; }
+                foreach (var kv in chkMap) { kv.Value.IsChecked = false; }
+            };
+
+            populateList();
+            scroll.Content = listStack;
+            mainStack.Children.Add(scroll);
+
+            // Bottom action buttons
+            var actionsDock = new DockPanel();
+            var btnImport = new Button() {
+                Content = isAr ? "➕ استيراد الألعاب المحددة إلى القائمة" : "➕ Import Selected Games",
+                Background = new SolidColorBrush(Color.FromRgb(16, 185, 129)),
+                Foreground = new SolidColorBrush(Color.FromRgb(5, 15, 10)),
+                FontWeight = FontWeights.Bold,
+                Padding = new Thickness(16, 8, 16, 8),
+                Cursor = Cursors.Hand
+            };
+            btnImport.Click += (s, e) => {
+                int countAdded = 0;
+                foreach (var g in installedGames)
+                {
+                    if (!g.isAlreadyAdded && g.isSelected)
+                    {
+                        gamesList.Insert(0, new GameItem() {
+                            appId = g.appId,
+                            name = g.name,
+                            image = string.Format("https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/{0}/header.jpg", g.appId),
+                            enabled = true,
+                            type = "game"
+                        });
+                        countAdded++;
+                    }
+                }
+
+                if (countAdded > 0)
+                {
+                    SaveGames();
+                    UpdateTabButtonStyles();
+                    RenderGamesUI();
+                    CloseInAppModal();
+                    ShowToast(
+                        isAr ? string.Format("✅ تم استيراد {0} لعبة بنجاح!", countAdded) : string.Format("✅ Successfully imported {0} games!", countAdded),
+                        ToastType.Success);
+                }
+                else
+                {
+                    CloseInAppModal();
+                }
+            };
+            DockPanel.SetDock(btnImport, Dock.Left);
+            actionsDock.Children.Add(btnImport);
+
+            var btnClose = new Button() {
+                Content = isAr ? "إلغاء" : "Cancel",
+                Background = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255)),
+                Foreground = new SolidColorBrush(Color.FromRgb(148, 163, 184)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(14, 8, 14, 8),
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Cursor = Cursors.Hand
+            };
+            btnClose.Click += (s, e) => CloseInAppModal();
+            actionsDock.Children.Add(btnClose);
+
+            mainStack.Children.Add(actionsDock);
+
+            ShowInAppModal(mainStack, isAr ? "🎮 فحص واستيراد الألعاب المثبتة على الجهاز" : "🎮 Scan & Import Installed Steam Games", null, 680);
+        }
+
         // =========================================================================
         // --- CLEAN SETTINGS PREFERENCES DIALOG (IN-APP MODAL OVERLAY) ---
         // =========================================================================
@@ -2382,17 +4242,207 @@ namespace GreenLumaManager
         {
             bool isAr = (settings.lang == "ar");
 
-            var sp = new StackPanel() { Margin = new Thickness(8) };
+            var sp = new StackPanel() { Margin = new Thickness(4) };
 
-            // 1. Steam Directory Path Row
-            sp.Children.Add(new TextBlock() {
-                Text = isAr ? "مسار تثبيت Steam (مجلد steam.exe):" : "Steam Installation Directory:",
+            // Helper to create category group box
+            Func<string, FrameworkElement, Border> createCategory = (catTitle, content) => {
+                var groupBorder = new Border() {
+                    Background = new SolidColorBrush(Color.FromArgb(40, 15, 23, 42)),
+                    BorderBrush = new SolidColorBrush(Color.FromArgb(45, 255, 255, 255)),
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(8),
+                    Padding = new Thickness(12, 10, 12, 10),
+                    Margin = new Thickness(0, 0, 0, 10)
+                };
+                var groupStack = new StackPanel();
+                var txtHead = new TextBlock() {
+                    Text = catTitle,
+                    FontSize = 11.5,
+                    FontWeight = FontWeights.Bold,
+                    Foreground = new SolidColorBrush(Color.FromRgb(16, 185, 129)),
+                    Margin = new Thickness(0, 0, 0, 8)
+                };
+                groupStack.Children.Add(txtHead);
+                groupStack.Children.Add(content);
+                groupBorder.Child = groupStack;
+                return groupBorder;
+            };
+
+            // 1. Language & Appearance Category
+            var langStack = new DockPanel();
+            var txtLangInfo = new TextBlock() {
+                Text = isAr ? "اللغة الحالية: العربية" : "Current Language: English",
                 FontSize = 12,
+                Foreground = new SolidColorBrush(Color.FromRgb(226, 232, 240)),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            DockPanel.SetDock(txtLangInfo, Dock.Left);
+            langStack.Children.Add(txtLangInfo);
+
+            var btnSwitchLang = new Button() {
+                Content = isAr ? "🌐 Switch to English" : "🌐 التبديل إلى العربية",
+                Padding = new Thickness(12, 5, 12, 5),
+                Background = new SolidColorBrush(Color.FromArgb(40, 6, 182, 212)),
+                Foreground = new SolidColorBrush(Color.FromRgb(103, 232, 249)),
+                BorderBrush = new SolidColorBrush(Color.FromRgb(6, 182, 212)),
+                BorderThickness = new Thickness(1),
+                Cursor = Cursors.Hand,
+                HorizontalAlignment = HorizontalAlignment.Right
+            };
+            btnSwitchLang.Click += (s, e) => {
+                ToggleLanguage();
+                CloseInAppModal();
+                OpenSettingsDialog();
+            };
+            langStack.Children.Add(btnSwitchLang);
+            sp.Children.Add(createCategory(isAr ? "🌐 اللغة والواجهة" : "🌐 Language & Interface", langStack));
+
+            // 2. Tools & Diagnostics Category
+            var toolsGrid = new Grid();
+            toolsGrid.ColumnDefinitions.Add(new ColumnDefinition() { Width = new GridLength(1, GridUnitType.Star) });
+            toolsGrid.ColumnDefinitions.Add(new ColumnDefinition() { Width = new GridLength(1, GridUnitType.Star) });
+            toolsGrid.RowDefinitions.Add(new RowDefinition() { Height = GridLength.Auto });
+            toolsGrid.RowDefinitions.Add(new RowDefinition() { Height = GridLength.Auto });
+
+            var btnDoc = new Button() {
+                Content = isAr ? "🩺 طبيب ستيم" : "🩺 Steam Doctor",
+                ToolTip = isAr ? "فحص وتشخيص مشاكل ستيم والأخطاء" : "Diagnose Steam issues & running processes",
+                Padding = new Thickness(10, 8, 10, 8),
+                Background = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)),
+                Foreground = new SolidColorBrush(Color.FromRgb(241, 245, 249)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(50, 255, 255, 255)),
+                BorderThickness = new Thickness(1),
+                Cursor = Cursors.Hand,
+                Margin = new Thickness(0, 0, 6, 6)
+            };
+            btnDoc.Click += (s, e) => {
+                CloseInAppModal();
+                OpenSteamDoctorModal();
+            };
+            Grid.SetRow(btnDoc, 0);
+            Grid.SetColumn(btnDoc, 0);
+            toolsGrid.Children.Add(btnDoc);
+
+            var btnScanLocal = new Button() {
+                Content = isAr ? "🎮 فحص الألعاب المثبتة" : "🎮 Scan Installed Games",
+                ToolTip = isAr ? "فحص كافة مكتبات Steam على أقراص جهازك واستيراد الألعاب المثبتة فوراً" : "Scan all Steam libraries on local drives & import games",
+                Padding = new Thickness(10, 8, 10, 8),
+                Background = new SolidColorBrush(Color.FromArgb(30, 16, 185, 129)),
+                Foreground = new SolidColorBrush(Color.FromRgb(110, 231, 183)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(60, 16, 185, 129)),
+                BorderThickness = new Thickness(1),
+                Cursor = Cursors.Hand,
+                Margin = new Thickness(0, 0, 0, 6)
+            };
+            btnScanLocal.Click += (s, e) => {
+                CloseInAppModal();
+                OpenInstalledGamesModal();
+            };
+            Grid.SetRow(btnScanLocal, 0);
+            Grid.SetColumn(btnScanLocal, 1);
+            toolsGrid.Children.Add(btnScanLocal);
+
+            var btnPurge = new Button() {
+                Content = isAr ? "🧹 تنظيف ستيم" : "🧹 Clean Steam",
+                ToolTip = isAr ? "إعادة تعيين وحذف كافة ملفات GreenLuma من مجلد ستيم" : "Purge GreenLuma injection files from Steam",
+                Padding = new Thickness(10, 8, 10, 8),
+                Background = new SolidColorBrush(Color.FromArgb(30, 239, 68, 68)),
+                Foreground = new SolidColorBrush(Color.FromRgb(248, 113, 113)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(60, 239, 68, 68)),
+                BorderThickness = new Thickness(1),
+                Cursor = Cursors.Hand,
+                Margin = new Thickness(0, 0, 6, 0)
+            };
+            btnPurge.Click += (s, e) => {
+                CloseInAppModal();
+                PurgeAllArtifacts();
+            };
+            Grid.SetRow(btnPurge, 1);
+            Grid.SetColumn(btnPurge, 0);
+            toolsGrid.Children.Add(btnPurge);
+
+            var btnWipeCache = new Button() {
+                Content = isAr ? "🗑 مسح الكاش الآن" : "🗑 Clear Cache Now",
+                ToolTip = isAr ? "تشغيل أداة DeleteSteamAppCache.exe لمسح كاش ستيم فوراً" : "Run DeleteSteamAppCache.exe to clear cache immediately",
+                Padding = new Thickness(10, 8, 10, 8),
+                Background = new SolidColorBrush(Color.FromArgb(30, 245, 158, 11)),
+                Foreground = new SolidColorBrush(Color.FromRgb(251, 191, 36)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(60, 245, 158, 11)),
+                BorderThickness = new Thickness(1),
+                Cursor = Cursors.Hand
+            };
+            btnWipeCache.Click += (s, e) => {
+                ExecuteManualDeleteAppCache();
+            };
+            Grid.SetRow(btnWipeCache, 1);
+            Grid.SetColumn(btnWipeCache, 1);
+            toolsGrid.Children.Add(btnWipeCache);
+
+            sp.Children.Add(createCategory(isAr ? "🛠️ أدوات النظام والتشخيص" : "🛠️ System Tools & Diagnostics", toolsGrid));
+
+            // 3. Updates & Community Help Category
+            var updatesStack = new StackPanel();
+            var updateBtns = new StackPanel() { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 4) };
+
+            var btnCheckUp = new Button() {
+                Content = isAr ? "🔄 فحص التحديثات" : "🔄 Check Updates",
+                Padding = new Thickness(12, 6, 12, 6),
+                Background = new SolidColorBrush(Color.FromArgb(40, 16, 185, 129)),
+                Foreground = new SolidColorBrush(Color.FromRgb(110, 231, 183)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(80, 16, 185, 129)),
+                BorderThickness = new Thickness(1),
+                Cursor = Cursors.Hand,
+                Margin = new Thickness(0, 0, 8, 0)
+            };
+            btnCheckUp.Click += (s, e) => {
+                CloseInAppModal();
+                CheckForUpdatesAsync(true);
+            };
+            updateBtns.Children.Add(btnCheckUp);
+
+            var btnGuideModal = new Button() {
+                Content = isAr ? "📖 دليل الاستخدام والأسئلة" : "📖 User Guide & FAQ",
+                Padding = new Thickness(12, 6, 12, 6),
+                Background = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)),
+                Foreground = new SolidColorBrush(Color.FromRgb(226, 232, 240)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(50, 255, 255, 255)),
+                BorderThickness = new Thickness(1),
+                Cursor = Cursors.Hand,
+                Margin = new Thickness(0, 0, 8, 0)
+            };
+            btnGuideModal.Click += (s, e) => {
+                CloseInAppModal();
+                OpenQuickGuideDialog();
+            };
+            updateBtns.Children.Add(btnGuideModal);
+
+            var btnCsForum = new Button() {
+                Content = isAr ? "🌐 منتدى CS.RIN.RU ↗" : "🌐 CS.RIN.RU Topic ↗",
+                Padding = new Thickness(12, 6, 12, 6),
+                Background = new SolidColorBrush(Color.FromArgb(30, 6, 182, 212)),
+                Foreground = new SolidColorBrush(Color.FromRgb(103, 232, 249)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(60, 6, 182, 212)),
+                BorderThickness = new Thickness(1),
+                Cursor = Cursors.Hand
+            };
+            btnCsForum.Click += (s, e) => {
+                try { Process.Start(new ProcessStartInfo("https://cs.rin.ru/forum/viewtopic.php?f=10&t=140004") { UseShellExecute = true }); } catch { }
+            };
+            updateBtns.Children.Add(btnCsForum);
+            updatesStack.Children.Add(updateBtns);
+            sp.Children.Add(createCategory(isAr ? "🔄 التحديثات والمجتمع" : "🔄 Updates & Community", updatesStack));
+
+            // 4. Steam Paths & Options Category
+            var steamConfigStack = new StackPanel();
+
+            steamConfigStack.Children.Add(new TextBlock() {
+                Text = isAr ? "مسار تثبيت Steam (مجلد steam.exe):" : "Steam Installation Directory:",
+                FontSize = 11,
                 Foreground = new SolidColorBrush(Color.FromRgb(148, 163, 184)),
                 Margin = new Thickness(0, 0, 0, 4)
             });
 
-            var steamPathDock = new DockPanel() { Margin = new Thickness(0, 0, 0, 14) };
+            var steamPathDock = new DockPanel() { Margin = new Thickness(0, 0, 0, 8) };
             var btnBrowse = new Button() {
                 Content = isAr ? "📁 استعراض..." : "📁 Browse...",
                 Padding = new Thickness(12, 5, 12, 5),
@@ -2416,7 +4466,7 @@ namespace GreenLumaManager
                 FlowDirection = FlowDirection.LeftToRight
             };
             steamPathDock.Children.Add(txtCustomSteam);
-            sp.Children.Add(steamPathDock);
+            steamConfigStack.Children.Add(steamPathDock);
 
             btnBrowse.Click += (s, e) => {
                 var dlg = new OpenFileDialog();
@@ -2428,10 +4478,9 @@ namespace GreenLumaManager
                 }
             };
 
-            // 2. Steam Launch Arguments
-            sp.Children.Add(new TextBlock() {
+            steamConfigStack.Children.Add(new TextBlock() {
                 Text = isAr ? "معلمات التشغيل الإضافية لـ Steam:" : "Steam Launch Arguments:",
-                FontSize = 12,
+                FontSize = 11,
                 Foreground = new SolidColorBrush(Color.FromRgb(148, 163, 184)),
                 Margin = new Thickness(0, 0, 0, 4)
             });
@@ -2442,45 +4491,30 @@ namespace GreenLumaManager
                 Foreground = new SolidColorBrush(Color.FromRgb(6, 182, 212)),
                 BorderBrush = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)),
                 Padding = new Thickness(6, 4, 6, 4),
-                Margin = new Thickness(0, 0, 0, 14),
+                Margin = new Thickness(0, 0, 0, 8),
                 FlowDirection = FlowDirection.LeftToRight
             };
-            sp.Children.Add(txtSetArgs);
+            steamConfigStack.Children.Add(txtSetArgs);
 
-            // 3. Drop Updates Shortcut Button
-            var dropUpdatesRow = new DockPanel() { Margin = new Thickness(0, 0, 0, 20) };
-            var btnOpenFolder = new Button() {
+            var btnOpenAppFolder = new Button() {
                 Content = isAr ? "📂 فتح مجلد البرنامج" : "📂 Open App Folder",
-                Padding = new Thickness(12, 6, 12, 6),
-                Background = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)),
-                Foreground = new SolidColorBrush(Color.FromRgb(226, 232, 240)),
-                BorderBrush = new SolidColorBrush(Color.FromArgb(50, 255, 255, 255)),
+                Padding = new Thickness(10, 4, 10, 4),
+                Background = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)),
+                Foreground = new SolidColorBrush(Color.FromRgb(203, 213, 225)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)),
                 BorderThickness = new Thickness(1),
                 Cursor = Cursors.Hand,
-                Margin = new Thickness(0, 0, 8, 0)
+                HorizontalAlignment = HorizontalAlignment.Left
             };
-            btnOpenFolder.Click += (s, e) => {
+            btnOpenAppFolder.Click += (s, e) => {
                 try { Process.Start("explorer.exe", appDir); } catch { }
             };
-            dropUpdatesRow.Children.Add(btnOpenFolder);
+            steamConfigStack.Children.Add(btnOpenAppFolder);
 
-            var btnOpenCsThread = new Button() {
-                Content = isAr ? "🌐 موضوع GreenLuma على CS.RIN.RU ↗" : "🌐 CS.RIN.RU Topic ↗",
-                Padding = new Thickness(12, 6, 12, 6),
-                Background = new SolidColorBrush(Color.FromArgb(40, 6, 182, 212)),
-                Foreground = new SolidColorBrush(Color.FromRgb(103, 232, 249)),
-                BorderBrush = new SolidColorBrush(Color.FromRgb(6, 182, 212)),
-                BorderThickness = new Thickness(1),
-                Cursor = Cursors.Hand
-            };
-            btnOpenCsThread.Click += (s, e) => {
-                try { Process.Start(new ProcessStartInfo("https://cs.rin.ru/forum/viewtopic.php?f=10&t=140004") { UseShellExecute = true }); } catch { }
-            };
-            dropUpdatesRow.Children.Add(btnOpenCsThread);
-            sp.Children.Add(dropUpdatesRow);
+            sp.Children.Add(createCategory(isAr ? "⚙️ إعدادات ومسارات Steam" : "⚙️ Steam Paths & Configuration", steamConfigStack));
 
             // Action Buttons Row (Save / Cancel)
-            var btnRow = new StackPanel() { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+            var btnRow = new StackPanel() { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 6, 0, 0) };
             var btnCancel = new Button() {
                 Content = isAr ? "إلغاء" : "Cancel",
                 Padding = new Thickness(14, 6, 14, 6),
@@ -2519,7 +4553,7 @@ namespace GreenLumaManager
             btnRow.Children.Add(btnSave);
 
             sp.Children.Add(btnRow);
-            ShowInAppModal(sp, isAr ? "⚙️ إعدادات وتفضيلات GreenLuma" : "⚙️ GreenLuma Preferences", null, 620);
+            ShowInAppModal(sp, isAr ? "⚙️ مركز الإعدادات والأدوات" : "⚙️ Settings & Tools Hub", null, 660);
         }
 
         // ==========================================
@@ -2626,6 +4660,7 @@ namespace GreenLumaManager
                 return;
             }
 
+            int resIdx = 0;
             foreach (var item in results)
             {
                 var rowBorder = new Border() {
@@ -2638,6 +4673,27 @@ namespace GreenLumaManager
                     Cursor = Cursors.Hand,
                     Padding = new Thickness(6, 4, 8, 4)
                 };
+
+                var tgRow = new TransformGroup();
+                var stRow = new ScaleTransform(1.0, 1.0);
+                var ttRow = new TranslateTransform(isAr ? 35 : -35, 0);
+                tgRow.Children.Add(stRow);
+                tgRow.Children.Add(ttRow);
+                rowBorder.RenderTransformOrigin = new Point(0.5, 0.5);
+                rowBorder.RenderTransform = tgRow;
+                rowBorder.Opacity = 0.0;
+
+                var delay = TimeSpan.FromMilliseconds(Math.Min(resIdx * 25, 200));
+                var daX = new DoubleAnimation(isAr ? 35 : -35, 0, TimeSpan.FromMilliseconds(180)) {
+                    BeginTime = delay,
+                    DecelerationRatio = 0.6
+                };
+                ttRow.BeginAnimation(TranslateTransform.XProperty, daX);
+
+                var daOp = new DoubleAnimation(0.0, 1.0, TimeSpan.FromMilliseconds(180)) {
+                    BeginTime = delay
+                };
+                rowBorder.BeginAnimation(UIElement.OpacityProperty, daOp);
 
                 var rowDock = new DockPanel();
 
@@ -2673,6 +4729,7 @@ namespace GreenLumaManager
                     BorderThickness = new Thickness(0),
                     Cursor = Cursors.Hand
                 };
+                AttachTactilePress(btnAddRow);
                 int rowId = item.id;
                 string rowName = item.name;
                 btnAddRow.Click += (s, e) => {
@@ -2751,12 +4808,19 @@ namespace GreenLumaManager
                 rowBorder.MouseEnter += (s, e) => {
                     rowBorder.Background = new SolidColorBrush(Color.FromRgb(28, 38, 58));
                     rowBorder.BorderBrush = new SolidColorBrush(Color.FromRgb(16, 185, 129));
+                    ttRow.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(0, isAr ? -6 : 6, TimeSpan.FromMilliseconds(110)) { DecelerationRatio = 0.5 });
+                    stRow.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(1.0, 1.018, TimeSpan.FromMilliseconds(110)));
+                    stRow.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(1.0, 1.018, TimeSpan.FromMilliseconds(110)));
                 };
                 rowBorder.MouseLeave += (s, e) => {
                     rowBorder.Background = new SolidColorBrush(Color.FromRgb(18, 24, 38));
                     rowBorder.BorderBrush = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255));
+                    ttRow.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(isAr ? -6 : 6, 0, TimeSpan.FromMilliseconds(140)) { AccelerationRatio = 0.5 });
+                    stRow.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(1.018, 1.0, TimeSpan.FromMilliseconds(140)));
+                    stRow.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(1.018, 1.0, TimeSpan.FromMilliseconds(140)));
                 };
 
+                AttachTactilePress(rowBorder);
                 rowBorder.MouseDown += (s, e) => {
                     CloseSearchOverlay();
                     txtGameInput.Text = "";
@@ -2764,6 +4828,7 @@ namespace GreenLumaManager
                 };
 
                 searchResultsPanel.Children.Add(rowBorder);
+                resIdx++;
             }
 
             ShowSearchOverlay();
@@ -2782,37 +4847,36 @@ namespace GreenLumaManager
             FlowDirection = isAr ? FlowDirection.RightToLeft : FlowDirection.LeftToRight;
 
             txtLogoSub.Text = isAr ? "نظام التخفي" : "STEALTH HUB";
-            if (btnGuide != null) btnGuide.Content = isAr ? "📖 الدليل" : "📖 Guide";
-            btnSettings.Content = isAr ? "⚙️ الإعدادات" : "⚙️ Settings";
-            btnLangToggle.Content = isAr ? "🌐 English" : "🌐 العربية";
-            btnCheckUpdate.Content = isAr ? "🔄 التحديثات" : "🔄 Update";
-            btnCleanAll.Content = isAr ? "🧹 تنظيف ستيم" : "🧹 Clean Steam";
+            if (btnSettings != null)
+            {
+                if (this.ActualWidth < 980 && this.ActualWidth > 0)
+                {
+                    btnSettings.Content = "⚙️";
+                }
+                else
+                {
+                    btnSettings.Content = isAr ? "⚙️ الإعدادات" : "⚙️ Settings";
+                }
+            }
 
             UpdateModeButtonStyles();
             UpdateClearCacheButton();
 
-            if (btnRunAppCache != null)
-            {
-                btnRunAppCache.Content = isAr ? "🧹 مسح الكاش الآن" : "🧹 Clear Cache Now";
-                btnRunAppCache.ToolTip = isAr ? "مسح كاش ستيم يدوياً فوراً عبر أداة DeleteSteamAppCache.exe" : "Manually run DeleteSteamAppCache.exe right now";
-            }
             if (btnLaunch != null)
             {
-                btnLaunch.Content = isAr ? "🚀 تشغيل ستيم مع GreenLuma" : "🚀 Launch Steam (GreenLuma)";
-                btnLaunch.ToolTip = isAr ? "تشغيل تلقائي متكامل: إغلاق ستيم، مسح الكاش، تجهيز الملفات وتشغيل ستيم فوراً" : "1-Click Smart Launch: Closes Steam, clears cache, injects files & starts Steam cleanly";
+                btnLaunch.Content = isAr ? "🚀 تشغيل ستيم" : "🚀 Launch Steam";
+                btnLaunch.ToolTip = isAr ? "تشغيل تلقائي متكامل مع GreenLuma: إغلاق ستيم، مسح الكاش، تجهيز الملفات وتشغيل ستيم فوراً" : "1-Click Smart Launch: Closes Steam, clears cache, injects files & starts Steam cleanly";
             }
             if (btnInjectFiles != null)
             {
-                btnInjectFiles.Content = isAr ? "📦 تجهيز الملفات فقط" : "📦 Inject Files Only";
+                btnInjectFiles.Content = isAr ? "📦 تجهيز الملفات" : "📦 Inject Files";
                 btnInjectFiles.ToolTip = isAr ? "تجهيز وحقن ملفات GreenLuma و AppList داخل ستيم دون تشغيله" : "Prepare GreenLuma files & AppList in Steam directory without launching";
             }
             if (btnStop != null)
             {
-                btnStop.Content = isAr ? "🛑 إيقاف وحذف الملفات" : "🛑 Stop & Clean Files";
+                btnStop.Content = isAr ? "🛑 إيقاف وحذف" : "🛑 Stop & Clean";
                 btnStop.ToolTip = isAr ? "إغلاق ستيم وحذف user32.dll فوراً" : "Close Steam and remove user32.dll immediately";
             }
-
-            btnDeckSettings.Content = isAr ? "⚙️ الإعدادات" : "⚙️ Settings";
 
             txtSearchPlaceholder.Text = isAr ? 
                 "ابحث عن أي لعبة أو إضافة على ستيم بالاسم (مثال: Arc Raiders, GTA V, Elden Ring) أو AppID..." : 
@@ -2820,19 +4884,44 @@ namespace GreenLumaManager
             btnAddInput.Content = isAr ? "+ إضافة AppID" : "+ Add AppID";
             btnBulk.Content = isAr ? "📥 استيراد دفعة" : "📥 Bulk Import";
 
-            lblLibraryTitle.Text = isAr ? "🎮 قائمة العناصر المفتوحة في APPLIST:" : "🎮 UNLOCKED STEAM APPLIST:";
+            lblLibraryTitle.Text = isAr ? "🎮 قائمة العناصر:" : "🎮 APPLIST:";
             txtFilterInput.ToolTip = isAr ? "تصفية الألعاب المضافة..." : "Filter library...";
             btnToggleAll.Content = isAr ? "🔄 تبديل الكل" : "🔄 Toggle All";
             btnClearAll.Content = isAr ? "🗑 مسح الكل" : "🗑 Clear All";
 
             if (btnShareLibrary != null) btnShareLibrary.Content = isAr ? "📋 مشاركة" : "📋 Share";
             if (btnImportLibrary != null) btnImportLibrary.Content = isAr ? "📥 استيراد" : "📥 Import";
-            if (btnSteamDoctor != null) btnSteamDoctor.Content = isAr ? "🩺 طبيب ستيم" : "🩺 Steam Doctor";
 
             if (txtEmptyTitle != null) txtEmptyTitle.Text = isAr ? "مكتبتك المفتوحة خالية حالياً" : "Unlocked Library is Empty";
             if (txtEmptySubtitle != null) txtEmptySubtitle.Text = isAr ? 
                 "ابحث عن أي لعبة أو إضافة بالأعلى، أو أدخل الـ AppID، أو اختر من الألعاب الأكثر طلباً:" : 
                 "Search by game title above, enter an AppID, or quick-add popular titles below:";
+
+            if (btnModeToggle != null)
+            {
+                if (this.ActualWidth < 980 && this.ActualWidth > 0)
+                {
+                    btnModeToggle.Content = "⛶";
+                }
+                else
+                {
+                    btnModeToggle.Content = isMiniMode ? (isAr ? "🗖 مكبر" : "🗖 Big") : (isAr ? "⛶ مصغر" : "⛶ Mini");
+                }
+                btnModeToggle.ToolTip = isMiniMode ? (isAr ? "التبديل إلى لوحة التحكم الكاملة" : "Expand to Full Dashboard") : (isAr ? "التبديل إلى المنظر المصغر (نافذة صينية سريعة)" : "Switch to Compact Tray Mode");
+            }
+            if (btnMiniLaunch != null)
+            {
+                btnMiniLaunch.Content = isAr ? "🚀 تشغيل ستيم" : "🚀 Launch Steam";
+            }
+            if (btnMiniStop != null)
+            {
+                btnMiniStop.Content = isAr ? "🛑 إيقاف وحذف" : "🛑 Stop & Clean";
+            }
+            if (btnMiniAdd != null)
+            {
+                btnMiniAdd.Content = isAr ? "+ إضافة" : "+ Add";
+            }
+            UpdateViewSwitcherStyles();
 
             UpdateTabButtonStyles();
             UpdateStatusUI();
@@ -2840,11 +4929,13 @@ namespace GreenLumaManager
         }
 
         // ==========================================
-        // --- LIBRARY CARDS & CASCADE ANIMATION ---
+        // --- LIBRARY CARDS / LIST & CASCADE ANIMATION ---
         // ==========================================
         private void RenderGamesUI()
         {
-            gamesWrapPanel.Children.Clear();
+            bool isAr = (settings.lang == "ar");
+            if (gamesWrapPanel != null) gamesWrapPanel.Children.Clear();
+            if (gamesListStack != null) gamesListStack.Children.Clear();
             int enabledCount = 0;
             string filter = txtFilterInput != null ? txtFilterInput.Text.Trim().ToLower() : "";
 
@@ -2857,6 +4948,8 @@ namespace GreenLumaManager
                 if (emptyStatePanel != null) emptyStatePanel.Visibility = Visibility.Collapsed;
             }
 
+            bool isList = (currentViewMode == "list");
+
             int cardIndex = 0;
             foreach (var g in gamesList)
             {
@@ -2868,45 +4961,148 @@ namespace GreenLumaManager
                 if (currentFilterTab == "games" && isDlc) continue;
                 if (currentFilterTab == "dlcs" && !isDlc) continue;
 
-                // Text Search Filter
+                // Text Search Filter (Matches Title, AppID, or Parent Base Game)
                 if (!string.IsNullOrEmpty(filter))
                 {
-                    if (!g.name.ToLower().Contains(filter) && !g.appId.ToString().Contains(filter))
+                    bool matchName = g.name.ToLower().Contains(filter);
+                    bool matchId = g.appId.ToString().Contains(filter);
+                    bool matchParent = !string.IsNullOrEmpty(g.parentName) && g.parentName.ToLower().Contains(filter);
+                    if (!matchName && !matchId && !matchParent)
                         continue;
                 }
 
-                var card = CreateGameCard(g);
-                gamesWrapPanel.Children.Add(card);
-
-                // Waterfall Entrance Animation
-                var tg = card.RenderTransform as TransformGroup;
-                if (tg != null)
+                if (isList)
                 {
-                    TranslateTransform tt = null;
-                    foreach (var t in tg.Children)
+                    if (gamesListStack != null)
                     {
-                        if (t is TranslateTransform) { tt = (TranslateTransform)t; break; }
+                        var row = CreateGameRow(g);
+                        gamesListStack.Children.Add(row);
+
+                        var tgRow = row.RenderTransform as TransformGroup;
+                        if (tgRow != null)
+                        {
+                            TranslateTransform ttRow = null;
+                            ScaleTransform stRow = null;
+                            foreach (var t in tgRow.Children)
+                            {
+                                if (t is TranslateTransform) ttRow = (TranslateTransform)t;
+                                else if (t is ScaleTransform) stRow = (ScaleTransform)t;
+                            }
+
+                            if (g.appId == lastAddedAppId && lastAddedAppId > 0)
+                            {
+                                if (stRow != null)
+                                {
+                                    var animScale = new DoubleAnimationUsingKeyFrames();
+                                    animScale.KeyFrames.Add(new LinearDoubleKeyFrame(0.7, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(0))));
+                                    animScale.KeyFrames.Add(new SplineDoubleKeyFrame(1.06, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(160))));
+                                    animScale.KeyFrames.Add(new SplineDoubleKeyFrame(1.0, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(260))));
+                                    stRow.BeginAnimation(ScaleTransform.ScaleXProperty, animScale);
+                                    stRow.BeginAnimation(ScaleTransform.ScaleYProperty, animScale);
+                                }
+                                if (ttRow != null)
+                                {
+                                    ttRow.X = isAr ? 60 : -60;
+                                    var daX = new DoubleAnimation(isAr ? 60 : -60, 0, TimeSpan.FromMilliseconds(260)) { DecelerationRatio = 0.7 };
+                                    ttRow.BeginAnimation(TranslateTransform.XProperty, daX);
+                                }
+                                var shadow = new DropShadowEffect() { Color = Color.FromRgb(16, 185, 129), BlurRadius = 30, ShadowDepth = 0, Opacity = 0.9 };
+                                row.Effect = shadow;
+                                shadow.BeginAnimation(DropShadowEffect.BlurRadiusProperty, new DoubleAnimation(30, 0, TimeSpan.FromMilliseconds(1200)));
+                                row.Opacity = 0.0;
+                                row.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(0.0, 1.0, TimeSpan.FromMilliseconds(200)));
+                            }
+                            else if (ttRow != null)
+                            {
+                                ttRow.X = isAr ? 24 : -24;
+                                row.Opacity = 0.0;
+                                var timeDelay = TimeSpan.FromMilliseconds(Math.Min(cardIndex * 20, 260));
+                                var daX = new DoubleAnimation(isAr ? 24 : -24, 0, TimeSpan.FromMilliseconds(220)) {
+                                    BeginTime = timeDelay,
+                                    DecelerationRatio = 0.6
+                                };
+                                ttRow.BeginAnimation(TranslateTransform.XProperty, daX);
+                                var daOp = new DoubleAnimation(0.0, 1.0, TimeSpan.FromMilliseconds(220)) {
+                                    BeginTime = timeDelay
+                                };
+                                row.BeginAnimation(UIElement.OpacityProperty, daOp);
+                            }
+                        }
                     }
-
-                    if (tt != null)
+                }
+                else
+                {
+                    if (gamesWrapPanel != null)
                     {
-                        tt.Y = 22;
-                        card.Opacity = 0.0;
+                        var card = CreateGameCard(g);
+                        gamesWrapPanel.Children.Add(card);
 
-                        var timeDelay = TimeSpan.FromMilliseconds(Math.Min(cardIndex * 25, 300));
-                        var daY = new DoubleAnimation(22, 0, TimeSpan.FromMilliseconds(240)) {
-                            BeginTime = timeDelay,
-                            DecelerationRatio = 0.6
-                        };
-                        tt.BeginAnimation(TranslateTransform.YProperty, daY);
+                        var tg = card.RenderTransform as TransformGroup;
+                        if (tg != null)
+                        {
+                            TranslateTransform tt = null;
+                            ScaleTransform st = null;
+                            foreach (var t in tg.Children)
+                            {
+                                if (t is TranslateTransform) tt = (TranslateTransform)t;
+                                else if (t is ScaleTransform) st = (ScaleTransform)t;
+                            }
 
-                        var daOp = new DoubleAnimation(0.0, 1.0, TimeSpan.FromMilliseconds(240)) {
-                            BeginTime = timeDelay
-                        };
-                        card.BeginAnimation(UIElement.OpacityProperty, daOp);
+                            if (g.appId == lastAddedAppId && lastAddedAppId > 0)
+                            {
+                                if (st != null)
+                                {
+                                    var animScale = new DoubleAnimationUsingKeyFrames();
+                                    animScale.KeyFrames.Add(new LinearDoubleKeyFrame(0.65, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(0))));
+                                    animScale.KeyFrames.Add(new SplineDoubleKeyFrame(1.08, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(180))));
+                                    animScale.KeyFrames.Add(new SplineDoubleKeyFrame(1.0, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(280))));
+                                    st.BeginAnimation(ScaleTransform.ScaleXProperty, animScale);
+                                    st.BeginAnimation(ScaleTransform.ScaleYProperty, animScale);
+                                }
+                                if (tt != null)
+                                {
+                                    tt.Y = 40;
+                                    var daY = new DoubleAnimation(40, 0, TimeSpan.FromMilliseconds(280)) { DecelerationRatio = 0.7 };
+                                    tt.BeginAnimation(TranslateTransform.YProperty, daY);
+                                }
+                                var shadow = card.Effect as DropShadowEffect;
+                                if (shadow != null)
+                                {
+                                    shadow.Color = Color.FromRgb(16, 185, 129);
+                                    shadow.BlurRadius = 36;
+                                    shadow.BeginAnimation(DropShadowEffect.BlurRadiusProperty, new DoubleAnimation(36, 0, TimeSpan.FromMilliseconds(1200)));
+                                }
+                                card.Opacity = 0.0;
+                                card.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(0.0, 1.0, TimeSpan.FromMilliseconds(200)));
+                            }
+                            else if (tt != null)
+                            {
+                                tt.Y = 22;
+                                card.Opacity = 0.0;
+
+                                var timeDelay = TimeSpan.FromMilliseconds(Math.Min(cardIndex * 25, 300));
+                                var daY = new DoubleAnimation(22, 0, TimeSpan.FromMilliseconds(240)) {
+                                    BeginTime = timeDelay,
+                                    DecelerationRatio = 0.6
+                                };
+                                tt.BeginAnimation(TranslateTransform.YProperty, daY);
+
+                                var daOp = new DoubleAnimation(0.0, 1.0, TimeSpan.FromMilliseconds(240)) {
+                                    BeginTime = timeDelay
+                                };
+                                card.BeginAnimation(UIElement.OpacityProperty, daOp);
+                            }
+                        }
                     }
                 }
                 cardIndex++;
+            }
+
+            lastAddedAppId = 0;
+
+            if (isMiniMode)
+            {
+                RenderMiniGamesList();
             }
         }
 
@@ -2944,16 +5140,18 @@ namespace GreenLumaManager
             card.Effect = cardShadow;
 
             card.MouseEnter += (s, e) => {
-                st.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(1.0, 1.038, TimeSpan.FromMilliseconds(140)) { DecelerationRatio = 0.5 });
-                st.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(1.0, 1.038, TimeSpan.FromMilliseconds(140)) { DecelerationRatio = 0.5 });
-                cardShadow.BeginAnimation(DropShadowEffect.BlurRadiusProperty, new DoubleAnimation(0, 22, TimeSpan.FromMilliseconds(140)));
+                st.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(1.0, 1.045, TimeSpan.FromMilliseconds(130)) { DecelerationRatio = 0.5 });
+                st.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(1.0, 1.045, TimeSpan.FromMilliseconds(130)) { DecelerationRatio = 0.5 });
+                tt.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(0, -6, TimeSpan.FromMilliseconds(130)) { DecelerationRatio = 0.5 });
+                cardShadow.BeginAnimation(DropShadowEffect.BlurRadiusProperty, new DoubleAnimation(0, 26, TimeSpan.FromMilliseconds(130)));
                 card.BorderBrush = isActuallyDlc ? new SolidColorBrush(Color.FromRgb(245, 158, 11)) : new SolidColorBrush(Color.FromRgb(16, 185, 129));
             };
 
             card.MouseLeave += (s, e) => {
-                st.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(1.038, 1.0, TimeSpan.FromMilliseconds(160)) { AccelerationRatio = 0.5 });
-                st.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(1.038, 1.0, TimeSpan.FromMilliseconds(160)) { AccelerationRatio = 0.5 });
-                cardShadow.BeginAnimation(DropShadowEffect.BlurRadiusProperty, new DoubleAnimation(22, 0, TimeSpan.FromMilliseconds(160)));
+                st.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(1.045, 1.0, TimeSpan.FromMilliseconds(160)) { AccelerationRatio = 0.5 });
+                st.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(1.045, 1.0, TimeSpan.FromMilliseconds(160)) { AccelerationRatio = 0.5 });
+                tt.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(-6, 0, TimeSpan.FromMilliseconds(160)) { AccelerationRatio = 0.5 });
+                cardShadow.BeginAnimation(DropShadowEffect.BlurRadiusProperty, new DoubleAnimation(26, 0, TimeSpan.FromMilliseconds(160)));
                 card.BorderBrush = isActuallyDlc ? new SolidColorBrush(Color.FromArgb(70, 245, 158, 11)) : new SolidColorBrush(Color.FromArgb(40, 255, 255, 255));
             };
 
@@ -2973,13 +5171,16 @@ namespace GreenLumaManager
             catch { }
             imgContainer.Children.Add(img);
 
+            var vignetteBrush = new LinearGradientBrush() {
+                StartPoint = new Point(0, 0),
+                EndPoint = new Point(0, 1)
+            };
+            vignetteBrush.GradientStops.Add(new GradientStop(Color.FromArgb(0, 14, 19, 30), 0.0));
+            vignetteBrush.GradientStops.Add(new GradientStop(Color.FromArgb(70, 14, 19, 30), 0.55));
+            vignetteBrush.GradientStops.Add(new GradientStop(Color.FromRgb(14, 19, 30), 1.0));
+
             var imgTint = new Border() {
-                Background = new LinearGradientBrush(
-                    Color.FromArgb(40, 11, 15, 25),
-                    Color.FromArgb(90, 11, 15, 25),
-                    new Point(0, 0),
-                    new Point(0, 1)
-                )
+                Background = vignetteBrush
             };
             imgContainer.Children.Add(imgTint);
 
@@ -3059,6 +5260,37 @@ namespace GreenLumaManager
             stack.Children.Add(imgContainer);
 
             var detailsStack = new StackPanel() { Margin = new Thickness(12) };
+
+            // If it is a DLC, display the parent relationship link chip at the very top of details!
+            if (isActuallyDlc)
+            {
+                string parentLabel = !string.IsNullOrEmpty(game.parentName) ? game.parentName : (game.parentAppId > 0 ? ("App " + game.parentAppId) : null);
+                if (!string.IsNullOrEmpty(parentLabel))
+                {
+                    var parentChip = new Border() {
+                        Background = new SolidColorBrush(Color.FromArgb(35, 6, 182, 212)),
+                        BorderBrush = new SolidColorBrush(Color.FromArgb(70, 6, 182, 212)),
+                        BorderThickness = new Thickness(1),
+                        CornerRadius = new CornerRadius(4),
+                        Padding = new Thickness(6, 2, 6, 2),
+                        Margin = new Thickness(0, 0, 0, 5),
+                        HorizontalAlignment = HorizontalAlignment.Left,
+                        Cursor = Cursors.Hand,
+                        ToolTip = isAr ? ("انقر لتصفية مكتبتك حسب اللعبة الأساسية: " + parentLabel) : ("Click to filter library by base game: " + parentLabel)
+                    };
+                    parentChip.Child = new TextBlock() {
+                        Text = "🔗 " + parentLabel,
+                        FontSize = 10,
+                        FontWeight = FontWeights.SemiBold,
+                        Foreground = new SolidColorBrush(Color.FromRgb(103, 232, 249))
+                    };
+                    parentChip.MouseDown += (s, e) => {
+                        if (txtFilterInput != null) txtFilterInput.Text = parentLabel;
+                    };
+                    detailsStack.Children.Add(parentChip);
+                }
+            }
+
             var txtCardTitle = new TextBlock() {
                 Text = game.name,
                 FontSize = 13,
@@ -3090,22 +5322,41 @@ namespace GreenLumaManager
 
             if (!isActuallyDlc)
             {
+                // Count active DLCs in library
+                int linkedDlcCount = 0;
+                foreach (var other in gamesList)
+                {
+                    if (other.CheckIsDLC() && (other.parentAppId == game.appId || (!string.IsNullOrEmpty(other.parentName) && other.parentName.Equals(game.name, StringComparison.OrdinalIgnoreCase))))
+                    {
+                        linkedDlcCount++;
+                    }
+                }
+
                 var btnDlc = new Button() {
-                    Content = isAr ? "+ إضافة الـ DLCs" : "+ Add DLCs",
+                    Content = linkedDlcCount > 0 ? (isAr ? string.Format("🧩 {0} DLCs", linkedDlcCount) : string.Format("🧩 {0} DLCs", linkedDlcCount)) : (isAr ? "+ إضافة الـ DLCs" : "+ Add DLCs"),
+                    ToolTip = linkedDlcCount > 0 ? (isAr ? string.Format("يوجد {0} إضافات مفعلة. انقر لإدارتها والتحكم بها", linkedDlcCount) : string.Format("{0} DLCs linked. Click to manage them", linkedDlcCount)) : (isAr ? "البحث عن وتنزيل إضافات اللعبة الرسمية" : "Search and add official DLCs"),
                     FontSize = 10.5,
-                    Background = new SolidColorBrush(Color.FromArgb(40, 245, 158, 11)),
+                    Background = linkedDlcCount > 0 ? new SolidColorBrush(Color.FromArgb(50, 245, 158, 11)) : new SolidColorBrush(Color.FromArgb(40, 245, 158, 11)),
                     Foreground = new SolidColorBrush(Color.FromRgb(251, 191, 36)),
-                    BorderBrush = new SolidColorBrush(Color.FromArgb(60, 245, 158, 11)),
+                    BorderBrush = new SolidColorBrush(Color.FromArgb(80, 245, 158, 11)),
                     BorderThickness = new Thickness(1),
                     Padding = new Thickness(6, 2, 6, 2),
                     Cursor = Cursors.Hand,
                     HorizontalAlignment = HorizontalAlignment.Right
                 };
-                btnDlc.Click += (s, e) => FetchAndAddDLCs(game.appId, game.name);
+                if (linkedDlcCount > 0)
+                {
+                    btnDlc.Click += (s, e) => OpenGameDlcManagerDialog(game);
+                }
+                else
+                {
+                    btnDlc.Click += (s, e) => FetchAndAddDLCs(game.appId, game.name);
+                }
                 metaRow.Children.Add(btnDlc);
             }
             else
             {
+                string pLabel = !string.IsNullOrEmpty(game.parentName) ? game.parentName : (game.parentAppId > 0 ? ("App " + game.parentAppId) : null);
                 var dlcTag = new Border() {
                     Background = new SolidColorBrush(Color.FromArgb(30, 245, 158, 11)),
                     BorderBrush = new SolidColorBrush(Color.FromArgb(60, 245, 158, 11)),
@@ -3115,8 +5366,10 @@ namespace GreenLumaManager
                     HorizontalAlignment = HorizontalAlignment.Right
                 };
                 dlcTag.Child = new TextBlock() {
-                    Text = isAr ? "إضافة تابعة" : "Linked DLC",
+                    Text = !string.IsNullOrEmpty(pLabel) ? (isAr ? ("إضافة لـ " + pLabel) : ("DLC for " + pLabel)) : (isAr ? "إضافة تابعة" : "Linked DLC"),
                     FontSize = 10,
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                    MaxWidth = 130,
                     Foreground = new SolidColorBrush(Color.FromRgb(251, 191, 36))
                 };
                 metaRow.Children.Add(dlcTag);
@@ -3125,28 +5378,13 @@ namespace GreenLumaManager
             detailsStack.Children.Add(metaRow);
 
             var actionRow = new DockPanel();
-            var chkEnable = new CheckBox() {
-                IsChecked = game.enabled,
-                Content = game.enabled ? (isAr ? "مفعل" : "Active") : (isAr ? "معطل" : "Disabled"),
-                Foreground = game.enabled ? new SolidColorBrush(Color.FromRgb(16, 185, 129)) : new SolidColorBrush(Color.FromRgb(100, 116, 139)),
-                VerticalAlignment = VerticalAlignment.Center
-            };
-            chkEnable.Checked += (s, e) => {
-                game.enabled = true;
-                chkEnable.Content = isAr ? "مفعل" : "Active";
-                chkEnable.Foreground = new SolidColorBrush(Color.FromRgb(16, 185, 129));
+            var toggleCard = CreateNeonToggle(game.enabled, (val) => {
+                game.enabled = val;
                 SaveGames();
                 UpdateStatusUI();
-            };
-            chkEnable.Unchecked += (s, e) => {
-                game.enabled = false;
-                chkEnable.Content = isAr ? "معطل" : "Disabled";
-                chkEnable.Foreground = new SolidColorBrush(Color.FromRgb(100, 116, 139));
-                SaveGames();
-                UpdateStatusUI();
-            };
-            DockPanel.SetDock(chkEnable, Dock.Left);
-            actionRow.Children.Add(chkEnable);
+            });
+            DockPanel.SetDock(toggleCard, Dock.Left);
+            actionRow.Children.Add(toggleCard);
 
             var btnDel = new Button() {
                 Content = isAr ? "🗑 حذف" : "🗑 Remove",
@@ -3157,11 +5395,9 @@ namespace GreenLumaManager
                 HorizontalAlignment = HorizontalAlignment.Right,
                 Padding = new Thickness(4, 2, 4, 2)
             };
+            AttachTactilePress(btnDel);
             btnDel.Click += (s, e) => {
-                gamesList.Remove(game);
-                SaveGames();
-                UpdateTabButtonStyles();
-                RenderGamesUI();
+                AnimateAndRemoveCard(card, game);
             };
             actionRow.Children.Add(btnDel);
 
@@ -3231,11 +5467,7 @@ namespace GreenLumaManager
                 Foreground = new SolidColorBrush(Color.FromRgb(239, 68, 68))
             };
             miDel.Click += (s, e) => {
-                gamesList.Remove(game);
-                SaveGames();
-                UpdateTabButtonStyles();
-                RenderGamesUI();
-                ShowToast(isAr ? ("تمت إزالة " + game.name) : ("Removed " + game.name), ToastType.Info);
+                AnimateAndRemoveCard(card, game);
             };
             cm.Items.Add(miDel);
 
@@ -3269,10 +5501,9 @@ namespace GreenLumaManager
             {
                 if (g.appId == appId)
                 {
-                    MessageBox.Show(
-                        isAr ? ("اللعبة برقم " + appId + " موجودة بالفعل في مكتبتك.") : ("Game with AppID " + appId + " is already in your library."),
-                        isAr ? "موجودة مسبقاً" : "Already Exists",
-                        MessageBoxButton.OK, MessageBoxImage.Information);
+                    ShowToast(
+                        isAr ? ("العنصر برقم " + appId + " موجود بالفعل في مكتبتك.") : ("Item with AppID " + appId + " is already in your library."),
+                        ToastType.Info);
                     return;
                 }
             }
@@ -3282,6 +5513,8 @@ namespace GreenLumaManager
                 string headerImg = string.Format("https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/{0}/header.jpg", appId);
                 bool isDlcType = false;
                 bool isFs = true;
+                int parentId = 0;
+                string parentTitle = "";
 
                 if (appId == 1174180 || appId == 271590 || appId == 359550 || appId == 1222670) isFs = false;
 
@@ -3313,7 +5546,16 @@ namespace GreenLumaManager
                                         string t = data["type"].ToString().ToLower();
                                         if (t == "dlc" || t == "music" || t == "soundtrack" || t == "series") isDlcType = true;
                                     }
-                                    if (data.ContainsKey("fullgame")) isDlcType = true;
+                                    if (data.ContainsKey("fullgame"))
+                                    {
+                                        isDlcType = true;
+                                        var fg = data["fullgame"] as Dictionary<string, object>;
+                                        if (fg != null)
+                                        {
+                                            if (fg.ContainsKey("appid")) parentId = Convert.ToInt32(fg["appid"]);
+                                            if (fg.ContainsKey("name")) parentTitle = fg["name"].ToString();
+                                        }
+                                    }
 
                                     string notice = (data.ContainsKey("ext_user_account_notice") ? data["ext_user_account_notice"].ToString() : "") + " " +
                                                     (data.ContainsKey("drm_notice") ? data["drm_notice"].ToString() : "");
@@ -3339,7 +5581,22 @@ namespace GreenLumaManager
                     isDlcType = true;
                 }
 
+                // If it's a DLC and parent is not yet linked, try to find matching base game in gamesList
+                if (isDlcType && parentId == 0)
+                {
+                    foreach (var bg in gamesList)
+                    {
+                        if (!bg.CheckIsDLC() && name.StartsWith(bg.name, StringComparison.OrdinalIgnoreCase))
+                        {
+                            parentId = bg.appId;
+                            parentTitle = bg.name;
+                            break;
+                        }
+                    }
+                }
+
                 Dispatcher.Invoke((Action)(() => {
+                    lastAddedAppId = appId;
                     gamesList.Insert(0, new GameItem() {
                         appId = appId,
                         name = name,
@@ -3347,11 +5604,17 @@ namespace GreenLumaManager
                         enabled = true,
                         isDLC = isDlcType,
                         type = isDlcType ? "dlc" : "game",
-                        familyShare = isFs
+                        familyShare = isFs,
+                        parentAppId = parentId,
+                        parentName = parentTitle
                     });
                     SaveGames();
                     UpdateTabButtonStyles();
                     RenderGamesUI();
+                    ShowToast(
+                        isAr ? string.Format("تمت إضافة {0} ({1}) بنجاح!", name, appId) :
+                               string.Format("Added {0} ({1}) successfully!", name, appId),
+                        ToastType.Success);
                 }));
             });
         }
@@ -3360,6 +5623,11 @@ namespace GreenLumaManager
         {
             bool isAr = (settings.lang == "ar");
 
+            ShowToast(
+                isAr ? string.Format("جاري البحث عن وتنزيل إضافات (DLCs) لـ {0}...", parentName) :
+                       string.Format("Searching and fetching official DLCs for {0}...", parentName),
+                ToastType.Info, 3000);
+
             ThreadPool.QueueUserWorkItem((state) => {
                 var dlcIds = new List<int>();
                 try
@@ -3367,7 +5635,7 @@ namespace GreenLumaManager
                     string url = string.Format("https://store.steampowered.com/api/appdetails?appids={0}&l=english", parentAppId);
                     var req = (HttpWebRequest)WebRequest.Create(url);
                     req.UserAgent = "Mozilla/5.0";
-                    req.Timeout = 5000;
+                    req.Timeout = 6000;
                     using (var resp = req.GetResponse())
                     using (var reader = new StreamReader(resp.GetResponseStream()))
                     {
@@ -3377,7 +5645,7 @@ namespace GreenLumaManager
                         if (dict != null && dict.ContainsKey(parentAppId.ToString()))
                         {
                             var appObj = dict[parentAppId.ToString()] as Dictionary<string, object>;
-                            if (appObj != null && (bool)appObj["success"])
+                            if (appObj != null && appObj.ContainsKey("success") && (bool)appObj["success"])
                             {
                                 var data = appObj["data"] as Dictionary<string, object>;
                                 if (data != null && data.ContainsKey("dlc"))
@@ -3397,42 +5665,115 @@ namespace GreenLumaManager
                 }
                 catch { }
 
-                Dispatcher.Invoke((Action)(() => {
-                    if (dlcIds.Count == 0)
+                if (dlcIds.Count == 0)
+                {
+                    Dispatcher.Invoke((Action)(() => {
+                        ShowToast(
+                            isAr ? string.Format("لم يتم العثور على أي إضافات (DLCs) مسجلة لـ {0} على ستيم.", parentName) :
+                                   string.Format("No DLCs found for {0} on Steam Store.", parentName),
+                            ToastType.Warning, 4000);
+                    }));
+                    return;
+                }
+
+                // Resolve real DLC titles and capsule covers from Steam to filter out junk/empty packages
+                var resolvedItems = new List<GameItem>();
+                foreach (var dlcId in dlcIds)
+                {
+                    bool exists = false;
+                    foreach (var g in gamesList) { if (g.appId == dlcId) { exists = true; break; } }
+                    if (exists) continue;
+
+                    string dlcName = null;
+                    string dlcImage = string.Format("https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/{0}/header.jpg", dlcId);
+                    bool isValidDlc = true;
+
+                    try
                     {
-                        MessageBox.Show(
-                            isAr ? ("لم يتم العثور على أي إضافات (DLCs) لـ " + parentName + " على متجر ستيم.") : ("No DLCs found for " + parentName + " on Steam Store."),
-                            isAr ? "إضافات اللعبة" : "DLCs",
-                            MessageBoxButton.OK, MessageBoxImage.Information);
+                        string dUrl = string.Format("https://store.steampowered.com/api/appdetails?appids={0}&filters=basic&l=english", dlcId);
+                        var dReq = (HttpWebRequest)WebRequest.Create(dUrl);
+                        dReq.UserAgent = "Mozilla/5.0";
+                        dReq.Timeout = 4000;
+                        using (var dResp = dReq.GetResponse())
+                        using (var dReader = new StreamReader(dResp.GetResponseStream()))
+                        {
+                            string dJson = dReader.ReadToEnd();
+                            var js = new JavaScriptSerializer();
+                            var dDict = js.Deserialize<Dictionary<string, object>>(dJson);
+                            if (dDict != null && dDict.ContainsKey(dlcId.ToString()))
+                            {
+                                var dObj = dDict[dlcId.ToString()] as Dictionary<string, object>;
+                                if (dObj != null && dObj.ContainsKey("success") && (bool)dObj["success"])
+                                {
+                                    var dData = dObj["data"] as Dictionary<string, object>;
+                                    if (dData != null)
+                                    {
+                                        if (dData.ContainsKey("name")) dlcName = dData["name"].ToString();
+                                        if (dData.ContainsKey("header_image")) dlcImage = dData["header_image"].ToString();
+                                        if (dData.ContainsKey("type"))
+                                        {
+                                            string t = dData["type"].ToString().ToLower();
+                                            if (t == "demo" || t == "hardware" || t == "tool" || t == "server" || t == "beta")
+                                            {
+                                                isValidDlc = false;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    catch { }
+
+                    if (!isValidDlc) continue;
+
+                    if (string.IsNullOrEmpty(dlcName))
+                    {
+                        dlcName = string.Format("{0} - DLC ({1})", parentName, dlcId);
+                    }
+
+                    resolvedItems.Add(new GameItem() {
+                        appId = dlcId,
+                        name = dlcName,
+                        image = dlcImage,
+                        enabled = true,
+                        isDLC = true,
+                        type = "dlc",
+                        parentAppId = parentAppId,
+                        parentName = parentName
+                    });
+                }
+
+                Dispatcher.Invoke((Action)(() => {
+                    if (resolvedItems.Count == 0)
+                    {
+                        ShowToast(
+                            isAr ? string.Format("كافة إضافات {0} مضافة بالفعل في مكتبتك!", parentName) :
+                                   string.Format("All DLCs for {0} are already in your library!", parentName),
+                            ToastType.Info, 4000);
                         return;
                     }
 
-                    int added = 0;
-                    foreach (var dlcId in dlcIds)
+                    // Insert next to parent game in library
+                    int insertIdx = 0;
+                    for (int i = 0; i < gamesList.Count; i++)
                     {
-                        bool exists = false;
-                        foreach (var g in gamesList) { if (g.appId == dlcId) { exists = true; break; } }
-                        if (!exists)
+                        if (gamesList[i].appId == parentAppId)
                         {
-                            gamesList.Insert(0, new GameItem() {
-                                appId = dlcId,
-                                name = parentName + " - DLC (" + dlcId + ")",
-                                image = string.Format("https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/{0}/header.jpg", dlcId),
-                                enabled = true,
-                                isDLC = true,
-                                type = "dlc"
-                            });
-                            added++;
+                            insertIdx = i + 1;
+                            break;
                         }
                     }
+                    gamesList.InsertRange(insertIdx, resolvedItems);
 
                     SaveGames();
                     UpdateTabButtonStyles();
                     RenderGamesUI();
-                    MessageBox.Show(
-                        isAr ? string.Format("تم إضافة وتفعيل {0} إضافة (DLC) بنجاح لـ {1}!", added, parentName) : string.Format("Successfully unlocked and added {0} DLCs for {1}!", added, parentName),
-                        isAr ? "تمت إضافة الـ DLCs" : "DLCs Added",
-                        MessageBoxButton.OK, MessageBoxImage.Information);
+
+                    ShowToast(
+                        isAr ? string.Format("تمت إضافة وتفعيل {0} إضافات رسمية بنجاح لـ {1}!", resolvedItems.Count, parentName) :
+                               string.Format("Successfully added and unlocked {0} official DLCs for {1}!", resolvedItems.Count, parentName),
+                        ToastType.Success, 5000);
                 }));
             });
         }
@@ -3441,18 +5782,7 @@ namespace GreenLumaManager
         {
             bool isAr = (settings.lang == "ar");
 
-            var win = new Window() {
-                Title = isAr ? "استيراد دفعة ألعاب وإضافات (Bulk Import)" : "Bulk Import AppIDs",
-                Width = 520,
-                Height = 360,
-                WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                Owner = this,
-                Background = new SolidColorBrush(Color.FromRgb(15, 20, 30)),
-                Foreground = new SolidColorBrush(Color.FromRgb(248, 250, 252)),
-                FlowDirection = isAr ? FlowDirection.RightToLeft : FlowDirection.LeftToRight
-            };
-
-            var sp = new StackPanel() { Margin = new Thickness(16) };
+            var sp = new StackPanel() { Margin = new Thickness(4) };
             sp.Children.Add(new TextBlock() {
                 Text = isAr ? "الصق أرقام AppIDs مفصولة بفواصل أو مسافات أو أسطر جديدة:" : "Paste AppIDs separated by commas, spaces, or new lines:",
                 FontSize = 13,
@@ -3461,7 +5791,7 @@ namespace GreenLumaManager
             });
 
             var tb = new TextBox() {
-                Height = 180,
+                Height = 160,
                 TextWrapping = TextWrapping.Wrap,
                 AcceptsReturn = true,
                 Background = new SolidColorBrush(Color.FromRgb(8, 12, 18)),
@@ -3472,13 +5802,31 @@ namespace GreenLumaManager
             };
             sp.Children.Add(tb);
 
+            var btnScanInstalledBulk = new Button() {
+                Content = isAr ? "🎮 أو فحص واستيراد الألعاب المثبتة على جهازك تلقائياً..." : "🎮 Or Scan & Import Installed Steam Games...",
+                Background = new SolidColorBrush(Color.FromArgb(30, 16, 185, 129)),
+                Foreground = new SolidColorBrush(Color.FromRgb(110, 231, 183)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(60, 16, 185, 129)),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(12, 7, 12, 7),
+                FontSize = 11.5,
+                FontWeight = FontWeights.SemiBold,
+                Margin = new Thickness(0, 10, 0, 0),
+                Cursor = Cursors.Hand
+            };
+            btnScanInstalledBulk.Click += (s, e) => {
+                CloseInAppModal();
+                OpenInstalledGamesModal();
+            };
+            sp.Children.Add(btnScanInstalledBulk);
+
             var btnImport = new Button() {
                 Content = isAr ? "استيراد كل الـ AppIDs الآن" : "Import AppIDs Now",
                 Background = new SolidColorBrush(Color.FromRgb(16, 185, 129)),
                 Foreground = new SolidColorBrush(Color.FromRgb(5, 15, 10)),
                 FontWeight = FontWeights.Bold,
                 Padding = new Thickness(14, 8, 14, 8),
-                Margin = new Thickness(0, 12, 0, 0),
+                Margin = new Thickness(0, 8, 0, 0),
                 Cursor = Cursors.Hand
             };
             btnImport.Click += (s, e) => {
@@ -3504,16 +5852,14 @@ namespace GreenLumaManager
                 SaveGames();
                 UpdateTabButtonStyles();
                 RenderGamesUI();
-                win.Close();
-                MessageBox.Show(
-                    isAr ? string.Format("تم استيراد {0} عنصر بنجاح!", added) : string.Format("Successfully imported {0} items!", added),
-                    isAr ? "اكتمل الاستيراد" : "Bulk Import",
-                    MessageBoxButton.OK, MessageBoxImage.Information);
+                CloseInAppModal();
+                ShowToast(
+                    isAr ? string.Format("✅ تم استيراد {0} عنصر بنجاح!", added) : string.Format("✅ Successfully imported {0} items!", added),
+                    ToastType.Success);
             };
             sp.Children.Add(btnImport);
 
-            win.Content = sp;
-            win.ShowDialog();
+            ShowInAppModal(sp, isAr ? "📥 استيراد دفعة ألعاب وإضافات (Bulk Import)" : "📥 Bulk Import AppIDs", null, 540);
         }
 
         // =========================================================================
@@ -4421,7 +6767,7 @@ namespace GreenLumaManager
                 Dispatcher.Invoke((Action)(() => {
                     bool isAr = (settings.lang == "ar");
 
-                    if (!string.IsNullOrEmpty(latestTag) && latestTag != CURRENT_VERSION)
+                    if (!string.IsNullOrEmpty(latestTag) && IsRemoteVersionNewer(latestTag, CURRENT_VERSION))
                     {
                         pendingUpdateUrl = releaseUrl;
                         pendingLatestTag = latestTag;
@@ -4447,25 +6793,12 @@ namespace GreenLumaManager
         private void OpenUpdateCenterDialog(string latestTag, string releaseUrl, string exeUrl, string latestPayloadVer, string latestPayloadDate, string csTopicUrl, string payloadNotes)
         {
             bool isAr = (settings.lang == "ar");
-            bool hasAppUpdate = !string.IsNullOrEmpty(latestTag) && latestTag != CURRENT_VERSION;
+            bool hasAppUpdate = IsRemoteVersionNewer(latestTag, CURRENT_VERSION);
 
             string currentPayloadSrc;
             GetPayloadBytes("user32SF.dll", out currentPayloadSrc);
 
-            var win = new Window() {
-                Title = isAr ? "مركز التحديثات وفحص CS.RIN.RU" : "Update Center & CS.RIN.RU Checker",
-                Width = 700,
-                Height = 650,
-                WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                Owner = this,
-                Background = new SolidColorBrush(Color.FromRgb(11, 15, 25)),
-                Foreground = new SolidColorBrush(Color.FromRgb(248, 250, 252)),
-                FlowDirection = isAr ? FlowDirection.RightToLeft : FlowDirection.LeftToRight,
-                ResizeMode = ResizeMode.NoResize,
-                WindowStyle = WindowStyle.ToolWindow
-            };
-
-            var mainDock = new DockPanel() { Margin = new Thickness(22) };
+            var mainDock = new DockPanel() { Margin = new Thickness(16) };
 
             var btnClose = new Button() {
                 Content = isAr ? "إغلاق" : "Close",
@@ -4479,7 +6812,7 @@ namespace GreenLumaManager
                 HorizontalAlignment = HorizontalAlignment.Center,
                 Margin = new Thickness(0, 14, 0, 0)
             };
-            btnClose.Click += (s, e) => win.Close();
+            btnClose.Click += (s, e) => CloseInAppModal();
             DockPanel.SetDock(btnClose, Dock.Bottom);
             mainDock.Children.Add(btnClose);
 
@@ -4562,7 +6895,7 @@ namespace GreenLumaManager
                     HorizontalAlignment = HorizontalAlignment.Left
                 };
                 btnDoAppUpdate.Click += (s, e) => {
-                    win.Close();
+                    CloseInAppModal();
                     StartInAppUpdate();
                 };
                 appStack.Children.Add(btnDoAppUpdate);
@@ -4683,7 +7016,7 @@ namespace GreenLumaManager
 
             scroll.Content = sp;
             mainDock.Children.Add(scroll);
-            ShowInAppModal(mainDock, isAr ? "📖 دليل الاستخدام والملفات المعتمدة" : "📖 Companion Usage & CS.RIN.RU Guide", null, 680);
+            ShowInAppModal(mainDock, isAr ? "🔄 مركز التحديثات وفحص CS.RIN.RU" : "🔄 Update Center & CS.RIN.RU Checker", null, 680);
         }
 
         private void DetectSteamPath()
@@ -4839,6 +7172,44 @@ namespace GreenLumaManager
                 catch { gamesList = new List<GameItem>(); }
             }
 
+            // Auto-heal and link parent-child DLC relationships for existing library
+            bool modified = false;
+            foreach (var g in gamesList)
+            {
+                if (g.CheckIsDLC() && (g.parentAppId == 0 || string.IsNullOrEmpty(g.parentName)))
+                {
+                    // 1. Try matching with an existing base game in library
+                    var parent = gamesList.Find(p => !p.CheckIsDLC() && g.name.StartsWith(p.name, StringComparison.OrdinalIgnoreCase));
+                    if (parent != null)
+                    {
+                        g.parentAppId = parent.appId;
+                        g.parentName = parent.name;
+                        modified = true;
+                    }
+                    else
+                    {
+                        // 2. Try splitting on " - " or ": "
+                        int idx = g.name.IndexOf(" - ");
+                        if (idx < 0) idx = g.name.IndexOf(": ");
+                        if (idx > 0)
+                        {
+                            string pName = g.name.Substring(0, idx).Trim();
+                            g.parentName = pName;
+                            modified = true;
+                        }
+                    }
+                }
+            }
+            if (modified)
+            {
+                try
+                {
+                    var js = new JavaScriptSerializer();
+                    File.WriteAllText(file, js.Serialize(gamesList), Encoding.UTF8);
+                }
+                catch { }
+            }
+
             UpdateTabButtonStyles();
             RenderGamesUI();
             SyncAppListIni();
@@ -4943,8 +7314,8 @@ namespace GreenLumaManager
                 borderStatusDot.Background = new SolidColorBrush(Color.FromRgb(16, 185, 129));
                 borderStatusPulseRing.Background = new SolidColorBrush(Color.FromRgb(16, 185, 129));
                 txtStatus.Text = running ? 
-                    (isAr ? "ستيم يعمل (محقون بـ GreenLuma)" : "Steam Running (Injected)") : 
-                    (isAr ? "الملفات محقونة وجاهزة (اضغط تشغيل ستيم)" : "Files Injected (Ready to Launch)");
+                    (isAr ? "ستيم نشط (محقون)" : "Steam Running (Injected)") : 
+                    (isAr ? "الملفات جاهزة للتشغيل" : "Files Injected (Ready)");
                 btnStop.Visibility = Visibility.Visible;
             }
             else
@@ -4952,8 +7323,8 @@ namespace GreenLumaManager
                 borderStatusDot.Background = running ? new SolidColorBrush(Color.FromRgb(245, 158, 11)) : new SolidColorBrush(Color.FromRgb(100, 116, 139));
                 borderStatusPulseRing.Background = running ? new SolidColorBrush(Color.FromRgb(245, 158, 11)) : new SolidColorBrush(Color.FromRgb(100, 116, 139));
                 txtStatus.Text = running ? 
-                    (isAr ? "ستيم يعمل (أصلي ونظيف)" : "Steam Running (Original)") : 
-                    (isAr ? "ستيم مغلق (نظيف 100%)" : "Steam Inactive (Clean)");
+                    (isAr ? "ستيم يعمل (أصلي)" : "Steam Running (Original)") : 
+                    (isAr ? "ستيم غير نشط" : "Steam Inactive");
                 btnStop.Visibility = running ? Visibility.Visible : Visibility.Collapsed;
             }
 
@@ -4974,6 +7345,11 @@ namespace GreenLumaManager
                     accountPillBorder.Visibility = Visibility.Collapsed;
                 }
             }
+
+            // Sync with Compact Tray Mode
+            if (btnMiniStop != null) btnMiniStop.Visibility = btnStop.Visibility;
+            if (lblMiniStatus != null) lblMiniStatus.Text = txtStatus.Text;
+            if (btnMiniLaunch != null && btnLaunch != null) btnMiniLaunch.IsEnabled = btnLaunch.IsEnabled;
         }
 
         private void MainWindow_Closing(object sender, System.ComponentModel.CancelEventArgs e)

@@ -1,8 +1,1 @@
-{
-    "customSteamPath":  "",
-    "mode":  "families",
-    "clearAppCache":  true,
-    "steamArgs":  "",
-    "lang":  "en",
-    "firstTimeGuideShown":  true
-}
+﻿{"customSteamPath":null,"mode":"families","clearAppCache":true,"steamArgs":"","lang":"en","firstTimeGuideShown":true,"viewMode":"cards","isMiniMode":false}
