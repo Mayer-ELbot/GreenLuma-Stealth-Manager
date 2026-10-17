@@ -120,7 +120,7 @@ namespace GreenLumaManager
 
     public class MainWindow : Window
     {
-        public const string CURRENT_VERSION = "v1.6.0";
+        public const string CURRENT_VERSION = "v1.6.1";
         public const string GITHUB_REPO = "Mayer-ELbot/GreenLuma-Stealth-Manager";
 
         [DllImport("user32.dll", SetLastError = true)]
@@ -1239,6 +1239,17 @@ namespace GreenLumaManager
                                      (isAr ? "ملف التخفي مفقود أو محجوب بواسطة مضاد الفيروسات!" : "Payload missing or blocked by Defender!"),
                     payloadHealthy
                 ));
+
+                // 6. Steam Beta & Pattern Compatibility
+                bool onBeta = IsSteamOnBeta();
+                cardsContainer.Children.Add(createDiagRow(
+                    isAr ? "6. قناة تحديث ستيم (Steam Channel & Pattern Safety)" : "6. Steam Channel & Pattern Safety",
+                    onBeta ? (isAr ? "⚠️ تم اكتشاف اشتراك ستيم بيتا! هذا سبب خطأ 'Failed to find pattern! (4)'. اضغط الزر بالأسفل للرجوع للمستقر." :
+                                     "⚠️ Steam Beta detected! This causes 'Failed to find pattern! (4)'. Use 'Revert to Stable' below.") :
+                             (isAr ? "ستيم مضبوط على القناة الرسمية المستقرة (Stable). متوافق 100% مع كود الحقن." :
+                                     "Steam is on official Stable channel. Fully compatible with GreenLuma."),
+                    !onBeta
+                ));
             };
 
             populateRows();
@@ -1262,6 +1273,16 @@ namespace GreenLumaManager
                 SyncAppListIni();
                 WipeAndDummyAppCache();
 
+                if (IsSteamOnBeta())
+                {
+                    try
+                    {
+                        string bFile = Path.Combine(steamDir, "package", "beta");
+                        if (File.Exists(bFile)) File.Delete(bFile);
+                    }
+                    catch { }
+                }
+
                 if (string.IsNullOrEmpty(steamDir) || !Directory.Exists(steamDir))
                 {
                     string scanned = AutoScanSteamDrives();
@@ -1283,6 +1304,24 @@ namespace GreenLumaManager
             };
             DockPanel.SetDock(btnAutoFix, Dock.Left);
             actionDock.Children.Add(btnAutoFix);
+
+            var btnRevertBeta = new Button() {
+                Content = isAr ? "⚡ الخروج من بيتا ستيم (Revert to Stable)" : "⚡ Revert Beta to Stable",
+                ToolTip = isAr ? "حل خطأ Failed to find pattern! (4) عبر الرجوع لإصدار ستيم الرسمي المستقر" : "Fix 'Failed to find pattern! (4)' by restoring official Steam stable",
+                Background = new SolidColorBrush(Color.FromArgb(40, 245, 158, 11)),
+                Foreground = new SolidColorBrush(Color.FromRgb(251, 191, 36)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(80, 245, 158, 11)),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(12, 10, 12, 10),
+                Cursor = Cursors.Hand,
+                Margin = new Thickness(8, 0, 8, 0)
+            };
+            btnRevertBeta.Click += (s, e) => {
+                RevertSteamBetaToStable();
+                populateRows();
+            };
+            DockPanel.SetDock(btnRevertBeta, Dock.Left);
+            actionDock.Children.Add(btnRevertBeta);
 
             var btnDeepClean = new Button() {
                 Content = isAr ? "🧹 تنظيف عميق لستيم" : "🧹 Deep Clean Steam",
@@ -4314,6 +4353,7 @@ namespace GreenLumaManager
             toolsGrid.ColumnDefinitions.Add(new ColumnDefinition() { Width = new GridLength(1, GridUnitType.Star) });
             toolsGrid.RowDefinitions.Add(new RowDefinition() { Height = GridLength.Auto });
             toolsGrid.RowDefinitions.Add(new RowDefinition() { Height = GridLength.Auto });
+            toolsGrid.RowDefinitions.Add(new RowDefinition() { Height = GridLength.Auto });
 
             var btnDoc = new Button() {
                 Content = isAr ? "🩺 طبيب ستيم" : "🩺 Steam Doctor",
@@ -4388,6 +4428,26 @@ namespace GreenLumaManager
             Grid.SetRow(btnWipeCache, 1);
             Grid.SetColumn(btnWipeCache, 1);
             toolsGrid.Children.Add(btnWipeCache);
+
+            var btnFixBeta = new Button() {
+                Content = isAr ? "⚡ استعادة ستيم المستقر (حل خطأ Failed to find pattern)" : "⚡ Revert Steam Beta to Stable (Fix Pattern 4)",
+                ToolTip = isAr ? "الخروج من ستيم بيتا وإلغاء أي كراش في الحقن واستعادة النسخة المستقرة الرسمية" : "Opt out of Steam Beta and restore Stable version to fix injection pattern crash",
+                Padding = new Thickness(10, 8, 10, 8),
+                Background = new SolidColorBrush(Color.FromArgb(30, 245, 158, 11)),
+                Foreground = new SolidColorBrush(Color.FromRgb(251, 191, 36)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(60, 245, 158, 11)),
+                BorderThickness = new Thickness(1),
+                Cursor = Cursors.Hand,
+                Margin = new Thickness(0, 6, 0, 0)
+            };
+            btnFixBeta.Click += (s, e) => {
+                CloseInAppModal();
+                RevertSteamBetaToStable();
+            };
+            Grid.SetRow(btnFixBeta, 2);
+            Grid.SetColumn(btnFixBeta, 0);
+            Grid.SetColumnSpan(btnFixBeta, 2);
+            toolsGrid.Children.Add(btnFixBeta);
 
             sp.Children.Add(createCategory(isAr ? "🛠️ أدوات النظام والتشخيص" : "🛠️ System Tools & Diagnostics", toolsGrid));
 
@@ -6223,6 +6283,190 @@ namespace GreenLumaManager
             return true;
         }
 
+        private bool IsSteamOnBeta()
+        {
+            if (string.IsNullOrEmpty(steamDir) || !Directory.Exists(steamDir)) return false;
+            try
+            {
+                string betaFile = Path.Combine(steamDir, "package", "beta");
+                if (File.Exists(betaFile))
+                {
+                    string content = File.ReadAllText(betaFile).Trim().ToLowerInvariant();
+                    if (!string.IsNullOrEmpty(content) && content != "none") return true;
+                }
+                string betaManifest = Path.Combine(steamDir, "package", "steam_client_publicbeta_win64.installed");
+                if (File.Exists(betaManifest)) return true;
+                string betaManifest32 = Path.Combine(steamDir, "package", "steam_client_publicbeta_win32.installed");
+                if (File.Exists(betaManifest32)) return true;
+            }
+            catch { }
+            return false;
+        }
+
+        private void RevertSteamBetaToStable(bool showSuccessToast = true)
+        {
+            bool isAr = (settings.lang == "ar");
+            if (string.IsNullOrEmpty(steamDir) || !Directory.Exists(steamDir))
+            {
+                ShowToast(isAr ? "لم يتم العثور على مجلد Steam!" : "Steam directory not found!", ToastType.Error);
+                return;
+            }
+
+            string steamExe = Path.Combine(steamDir, "steam.exe");
+            if (!File.Exists(steamExe))
+            {
+                ShowToast(isAr ? "تعذر العثور على steam.exe!" : "steam.exe not found!", ToastType.Error);
+                return;
+            }
+
+            try
+            {
+                // 1. Terminate running steam instances to free locked files
+                KillZombieSteamProcesses();
+
+                // 2. Remove injected stealth files (user32.dll, user32SF.dll) so Steam doesn't crash on start
+                string user32 = Path.Combine(steamDir, "user32.dll");
+                string user32sf = Path.Combine(steamDir, "user32SF.dll");
+                try { if (File.Exists(user32)) File.Delete(user32); } catch { }
+                try { if (File.Exists(user32sf)) File.Delete(user32sf); } catch { }
+
+                // 3. Remove package\beta marker
+                string betaFile = Path.Combine(steamDir, "package", "beta");
+                try { if (File.Exists(betaFile)) File.Delete(betaFile); } catch { }
+
+                // 4. Launch Steam with -clearbeta argument
+                var psi = new ProcessStartInfo(steamExe)
+                {
+                    Arguments = "-clearbeta",
+                    WorkingDirectory = steamDir,
+                    UseShellExecute = true
+                };
+                Process.Start(psi);
+
+                isInjected = false;
+                UpdateStatusUI();
+
+                if (showSuccessToast)
+                {
+                    ShowToast(
+                        isAr ? "🚀 تم إلغاء البيتا وتشغيل ستيم بأمر (-clearbeta)! سيقوم ستيم الآن باستعادة النسخة المستقرة الرسمية تلقائياً." :
+                               "🚀 Beta cleared! Steam launched with (-clearbeta) to download the official Stable build.",
+                        ToastType.Success,
+                        6000
+                    );
+                }
+            }
+            catch (Exception ex)
+            {
+                ShowToast(
+                    isAr ? ("فشل استعادة ستيم المستقر: " + ex.Message) : ("Failed to revert Steam: " + ex.Message),
+                    ToastType.Error
+                );
+            }
+        }
+
+        private void PromptSteamBetaWarning(Action onProceedAnyway)
+        {
+            bool isAr = (settings.lang == "ar");
+            var mainStack = new StackPanel() { Margin = new Thickness(4) };
+
+            var badge = new Border()
+            {
+                Background = new SolidColorBrush(Color.FromArgb(40, 245, 158, 11)),
+                BorderBrush = new SolidColorBrush(Color.FromRgb(245, 158, 11)),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(6),
+                Padding = new Thickness(12, 6, 12, 6),
+                Margin = new Thickness(0, 0, 0, 14),
+                HorizontalAlignment = HorizontalAlignment.Left
+            };
+            badge.Child = new TextBlock()
+            {
+                Text = isAr ? "⚠️ سبب خطأ: Failed to find pattern! (4)" : "⚠️ Cause of: Failed to find pattern! (4)",
+                FontSize = 12,
+                FontWeight = FontWeights.Bold,
+                Foreground = new SolidColorBrush(Color.FromRgb(251, 191, 36))
+            };
+            mainStack.Children.Add(badge);
+
+            var descText = new TextBlock()
+            {
+                Text = isAr ?
+                    "تم اكتشاف أن برنامج Steam لديك مشترك في تحديثات البيتا (Steam Beta Channel).\n\nتقوم تحديثات البيتا بتغيير أكواد وبصمات ذاكرة ستيم باستمرار، مما يمنع GreenLuma من التعرف عليها وتؤدي فوراً إلى ظهور رسالة الخطأ الشهيرة:\n\n'User32: Failed to find pattern! (4)'\n\nلضمان عمل الألعاب وتخطي هذا الخطأ، يُنصح بالرجوع إلى إصدار Steam الرسمي المستقر (Official Stable Release) الآن بنقرة واحدة." :
+                    "Steam is currently enrolled in the Steam Beta update channel.\n\nBeta updates constantly change internal memory signatures, breaking GreenLuma hooks and triggering the known error:\n\n'User32: Failed to find pattern! (4)'\n\nTo ensure games launch smoothly, it is highly recommended to revert to the official Steam Stable release now in 1-click.",
+                FontSize = 12.5,
+                Foreground = new SolidColorBrush(Color.FromRgb(226, 232, 240)),
+                TextWrapping = TextWrapping.Wrap,
+                LineHeight = 20,
+                Margin = new Thickness(0, 0, 0, 20)
+            };
+            mainStack.Children.Add(descText);
+
+            var btnDock = new DockPanel();
+
+            var btnRevert = new Button()
+            {
+                Content = isAr ? "⚡ الرجوع للإصدار المستقر الآن (Fix & Revert to Stable)" : "⚡ Fix & Revert Steam to Stable Now",
+                Background = new SolidColorBrush(Color.FromRgb(16, 185, 129)),
+                Foreground = new SolidColorBrush(Color.FromRgb(5, 15, 10)),
+                FontWeight = FontWeights.Bold,
+                FontSize = 12.5,
+                Padding = new Thickness(16, 10, 16, 10),
+                Cursor = Cursors.Hand,
+                BorderThickness = new Thickness(0)
+            };
+            btnRevert.Click += (s, e) =>
+            {
+                CloseInAppModal();
+                RevertSteamBetaToStable();
+            };
+            DockPanel.SetDock(btnRevert, Dock.Left);
+            btnDock.Children.Add(btnRevert);
+
+            var rightActions = new StackPanel() { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+
+            var btnProceed = new Button()
+            {
+                Content = isAr ? "متابعة على أي حال (خطر)" : "Launch Anyway (Risky)",
+                Background = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)),
+                Foreground = new SolidColorBrush(Color.FromRgb(148, 163, 184)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(50, 255, 255, 255)),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(12, 10, 12, 10),
+                Cursor = Cursors.Hand,
+                Margin = new Thickness(0, 0, 8, 0)
+            };
+            btnProceed.Click += (s, e) =>
+            {
+                CloseInAppModal();
+                if (onProceedAnyway != null) onProceedAnyway();
+            };
+            rightActions.Children.Add(btnProceed);
+
+            var btnCancel = new Button()
+            {
+                Content = isAr ? "إلغاء" : "Cancel",
+                Background = new SolidColorBrush(Color.FromArgb(30, 239, 68, 68)),
+                Foreground = new SolidColorBrush(Color.FromRgb(248, 113, 113)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(60, 239, 68, 68)),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(12, 10, 12, 10),
+                Cursor = Cursors.Hand
+            };
+            btnCancel.Click += (s, e) => CloseInAppModal();
+            rightActions.Children.Add(btnCancel);
+
+            btnDock.Children.Add(rightActions);
+            mainStack.Children.Add(btnDock);
+
+            ShowInAppModal(
+                mainStack,
+                isAr ? "⚠️ تحذير حرج: تم اكتشاف ستيم بيتا (Steam Beta)" : "⚠️ Critical: Steam Beta Detected",
+                null,
+                640
+            );
+        }
+
         private void LaunchSteamOnly()
         {
             ExecuteSmartLaunch();
@@ -6250,6 +6494,22 @@ namespace GreenLumaManager
                 OpenSteamDoctorModal();
                 return;
             }
+
+            // 0. فحص قناة ستيم بيتا لمنع ظهور خطأ Failed to find pattern! (4)
+            if (IsSteamOnBeta())
+            {
+                PromptSteamBetaWarning(() => {
+                    ContinueSmartLaunch(steamExe);
+                });
+                return;
+            }
+
+            ContinueSmartLaunch(steamExe);
+        }
+
+        private void ContinueSmartLaunch(string steamExe)
+        {
+            bool isAr = (settings.lang == "ar");
 
             // 1. إغلاق ستيم إن كان قيد التشغيل لضمان بيئة نظيفة تماماً
             if (IsSteamRunning())
@@ -6512,6 +6772,13 @@ namespace GreenLumaManager
                 isAr ? "كيفية تطبيق أي تحديث جديد من منتدى CS.RIN.RU؟" : "How to Apply New CS.RIN.RU Updates?",
                 isAr ? "عند صدور أي تحديث جديد لـ GreenLuma من المطور Steam006 على منتدى CS.RIN.RU:\n1. فك ضغط الملف المنزّل من المنتدى وستجد بداخله مجلد 'StealthMode'.\n2. انسخ مجلد 'StealthMode' وضعه بجانب ملف GreenLumaManager.exe مباشرة (أو انسخ ملفات user32SF.dll و DeleteSteamAppCache.exe بجانب البرنامج).\n3. سيقوم البرنامج فوراً بالتعرف على التحديث الجديد وإعطائه الأولوية تلقائياً (ستلاحظ في شريط الحالة بالأسفل ظهور StealthMode بدلاً من Core)!" :
                        "When a new GreenLuma release is posted by Steam006 on CS.RIN.RU:\n1. Extract the downloaded archive and locate the 'StealthMode' folder.\n2. Place the 'StealthMode' folder directly beside GreenLumaManager.exe (or place user32SF.dll & DeleteSteamAppCache.exe beside the EXE).\n3. The Manager immediately detects the new files and prioritizes them automatically (the telemetry badge on the right will show StealthMode instead of Core)!");
+
+            AddStepCard(
+                isAr ? "حل مشكلة شائعة" : "Troubleshooting",
+                "⚠️",
+                isAr ? "حل خطأ 'Failed to find pattern! (4)'" : "Fix 'Failed to find pattern! (4)' Error",
+                isAr ? "يحدث هذا الخطأ عندما يكون ستيم مشتركاً في تحديثات البيتا (Steam Beta) التي تغير بصمات الذاكرة باستمرار.\nالحل بضغطة واحدة: افتح 'طبيب ستيم' (Steam Doctor) واضغط زر '⚡ الخروج من بيتا ستيم'، وسيقوم البرنامج تلقائياً بإلغاء البيتا واستعادة نسخة ستيم المستقرة الرسمية (-clearbeta) وسيعمل الحقن فوراً بدون أي أخطاء!" :
+                       "This error happens when Steam is enrolled in the Beta update channel which alters memory patterns.\n1-Click Fix: Open 'Steam Doctor' and click '⚡ Revert Beta to Stable'. The Manager will wipe the beta lock and restore the official Stable build (-clearbeta), fixing the error immediately!");
 
             scroll.Content = sp;
             mainDock.Children.Add(scroll);

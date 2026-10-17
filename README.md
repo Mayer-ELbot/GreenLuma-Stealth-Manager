@@ -5,7 +5,7 @@
 # 🛡️ GreenLuma Stealth Manager (Open-Source Companion & GUI Hub)
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-v1.4.5-10B981?style=for-the-badge&logo=git&logoColor=white" alt="Version 1.4.5" />
+  <img src="https://img.shields.io/badge/Version-v1.6.1-10B981?style=for-the-badge&logo=git&logoColor=white" alt="Version 1.6.1" />
   <img src="https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="Windows" />
   <img src="https://img.shields.io/badge/Type-GUI%20%26%20Automation%20Helper-8B5CF6?style=for-the-badge" alt="Companion Tool" />
   <img src="https://img.shields.io/badge/Architecture-100%25%20Native%20WPF%20Desktop-06B6D4?style=for-the-badge" alt="Native WPF" />
@@ -35,6 +35,7 @@
 ---
 
 ## 📑 Table of Contents / جدول المحتويات
+- [📜 Release Changelog / سجل التحديثات](#-release-changelog--سجل-التحديثات)
 - [🇬🇧 English Documentation](#-english-documentation)
   - [What This Tool Does](#-what-this-tool-does)
   - [Key Features](#-key-features)
@@ -51,6 +52,31 @@
   - [الأسئلة الشائعة وحلول المشاكل](#-الأسئلة-الشائعة-وحول-المشاكل)
 - [🛠️ Building From Source](#-building-from-source)
 - [⚖️ License](#-license)
+
+---
+
+## 📜 Release Changelog / سجل التحديثات
+
+### 🚀 v1.6.1 (Official Release) - Steam Beta Self-Healing & Pattern 4 Protection
+- **🛡️ Steam Beta Pre-Flight Interceptor**:
+  - Automatically identifies whether Steam is enrolled in the Beta update channel (`package\beta`) before launching.
+  - Halts the launch *prior* to DLL injection, completely preventing the notorious `User32: Failed to find pattern! (4)` crash.
+- **⚡ 1-Click Auto-Revert to Official Stable**:
+  - Automatically terminates lingering Steam instances, wipes injected `user32.dll` payloads, clears `package\beta`, and executes `steam.exe -clearbeta` to restore the official Steam stable release.
+- **🩺 Steam Doctor Check #6**:
+  - Real-time diagnostic monitor: `Steam Channel & Pattern Safety` with a direct `⚡ Revert Beta to Stable` action button.
+- **⚙️ Settings & FAQ Integration**:
+  - Added dedicated one-click repair tool in Settings modal and comprehensive troubleshooting entry in Quick Start Guide.
+
+### 🎨 v1.6.0 - Zero-Collision Command Deck & Fluid GPU Animations
+- **Zero-Collision Command Deck**: Ergonomic layout ensuring zero element overlaps across full HD, 2K, and 4K displays.
+- **Dual Display Modes**: Seamless toggling between Full Dashboard and Compact Mini Tray Widget.
+- **Fluid Micro-Interactions**: Easing animations, vector canvas donut gauges, and tactile button presses.
+- **Smart AppList Priority**: Slot 90 base game ownership assignment with UTF-8 No-BOM enforcement.
+
+### ⚡ v1.4.5 - Seamless 1-Click Smart Launch & Window Polish
+- **Embedded Payload Engine**: Fully self-contained portable executable with zero external dependencies.
+- **Bilingual Interface**: 1-Click instantaneous toggle between Arabic and English.
 
 ---
 
@@ -190,8 +216,8 @@ Launch `GreenLumaManager.exe`. Look at the bottom-right status strip on the cont
 #### Q: How do I update GreenLuma when a new version comes out?
 > **Solution:** You don't need to wait for a new Manager release! Follow the [CS.RIN.RU Update Guide](#-how-to-apply-new-greenluma-updates-from-csrinru) above: drop the new `StealthMode/` folder or `user32SF.dll` next to `GreenLumaManager.exe`.
 
-#### Q: Is this a game crack or pirate software?
-> **Solution:** No. This is a configuration manager and launcher helper. It manages local configuration files and helper routines. Any game requiring third-party accounts, external DRM, or server-side authorization still requires legitimate credentials.
+#### Q: Steam shows an error popup: "User32: Failed to find pattern! (4)"?
+> **Solution:** This occurs when your Steam client is enrolled in the **Steam Beta** channel (`publicbeta`). Beta updates alter internal memory structures, breaking GreenLuma's signatures. Open **Steam Doctor** inside GreenLuma Manager and click **`⚡ Revert Beta to Stable`** (or launch via the app which prompts you to auto-revert). Steam will wipe the beta lock and download the official Stable release, permanently fixing the error.
 
 ---
 
@@ -333,6 +359,9 @@ Launch `GreenLumaManager.exe`. Look at the bottom-right status strip on the cont
 
 #### س: هل البرنامج آمن على حساب ستيم؟
 > **الحل:** نعم، فالبرنامج لا يقوم بأي تعديل دائم على ملفات ستيم، وملفات التخفي المؤقتة يتم حذفها فوراً عند الضغط على زر الإيقاف أو الخروج، ليعود مجلد ستيم أصلياً وخالياً من أي أثر.
+
+#### س: تظهر لي نافذة خطأ صغيرة بعنوان "User32" ومكتوب داخلها "Failed to find pattern! (4)"؟
+> **الحل:** هذا الخطأ يحدث عندما يكون ستيم مشتركاً في تحديثات البيتا (Steam Beta)؛ حيث تغير فالف بصمات الذاكرة فيفشل الحقن. الحل بضغطة زر واحدة: افتح **طبيب ستيم (Steam Doctor)** داخل البرنامج واضغط **`⚡ الخروج من بيتا ستيم (Revert to Stable)`** أو اضغط زر Launch وسيطلب منك البرنامج الرجوع للمستقر تلقائياً، وسيعمل كل شيء فوراً.
 
 ---
 
