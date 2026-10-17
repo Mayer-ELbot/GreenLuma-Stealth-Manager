@@ -6294,10 +6294,6 @@ namespace GreenLumaManager
                     string content = File.ReadAllText(betaFile).Trim().ToLowerInvariant();
                     if (!string.IsNullOrEmpty(content) && content != "none") return true;
                 }
-                string betaManifest = Path.Combine(steamDir, "package", "steam_client_publicbeta_win64.installed");
-                if (File.Exists(betaManifest)) return true;
-                string betaManifest32 = Path.Combine(steamDir, "package", "steam_client_publicbeta_win32.installed");
-                if (File.Exists(betaManifest32)) return true;
             }
             catch { }
             return false;
@@ -6330,9 +6326,21 @@ namespace GreenLumaManager
                 try { if (File.Exists(user32)) File.Delete(user32); } catch { }
                 try { if (File.Exists(user32sf)) File.Delete(user32sf); } catch { }
 
-                // 3. Remove package\beta marker
+                // 3. Remove package\beta marker & any stale beta manifests
                 string betaFile = Path.Combine(steamDir, "package", "beta");
                 try { if (File.Exists(betaFile)) File.Delete(betaFile); } catch { }
+                try
+                {
+                    string pkgDir = Path.Combine(steamDir, "package");
+                    if (Directory.Exists(pkgDir))
+                    {
+                        foreach (var f in Directory.GetFiles(pkgDir, "*publicbeta*"))
+                        {
+                            try { File.Delete(f); } catch { }
+                        }
+                    }
+                }
+                catch { }
 
                 // 4. Launch Steam with -clearbeta argument
                 var psi = new ProcessStartInfo(steamExe)
